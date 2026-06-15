@@ -1,12 +1,4 @@
-import type {
-  FxRefreshResponse,
-  ImportResponse,
-  QuoteResponse,
-  SummaryResponse,
-  TransactionsResponse,
-  DisplayCurrencyResponse,
-  DisplayCurrencyRequest,
-} from "@/lib/types";
+import type { DashboardResponse, HoldingResponse } from "@/lib/types";
 
 function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -18,9 +10,6 @@ function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-/**
- * Minimal REST client talking to the FastAPI backend.
- */
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
@@ -36,48 +25,17 @@ export class ApiClient {
     return url.toString();
   }
 
-  async getSummary(currency: string): Promise<SummaryResponse> {
-    const response = await fetch(this.url("summary", { display_currency: currency }));
-    return handleResponse<SummaryResponse>(response);
+  async getDashboard(): Promise<DashboardResponse> {
+    const response = await fetch(this.url("dashboard"));
+    return handleResponse<DashboardResponse>(response);
   }
 
-  async getTransactions(limit = 200): Promise<TransactionsResponse> {
-    const response = await fetch(this.url("transactions", { limit }));
-    return handleResponse<TransactionsResponse>(response);
-  }
-
-  async importWorkbook(sheets?: string[]): Promise<ImportResponse> {
-    const params: Record<string, string> = {};
-    sheets?.forEach((sheet) => {
-      params["sheet_names"] = sheet; // FastAPI accepts repeated query params.
+  async updateFinpension(value_chf: number, label?: string): Promise<HoldingResponse> {
+    const response = await fetch(this.url("holdings/finpension"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value_chf, label: label ?? null }),
     });
-    const response = await fetch(this.url("import", params), { method: "POST" });
-    return handleResponse<ImportResponse>(response);
-  }
-
-  async refreshFx(base: string, quote: string): Promise<FxRefreshResponse> {
-    const response = await fetch(this.url("fx/refresh", { base, quote }), { method: "POST" });
-    return handleResponse<FxRefreshResponse>(response);
-  }
-
-  async refreshEquity(symbol: string): Promise<QuoteResponse> {
-    const response = await fetch(this.url(`quotes/equity/${symbol}`), { method: "POST" });
-    return handleResponse<QuoteResponse>(response);
-  }
-
-  async refreshCrypto(uuid: string): Promise<QuoteResponse> {
-    const response = await fetch(this.url(`quotes/crypto/${uuid}`), { method: "POST" });
-    return handleResponse<QuoteResponse>(response);
-  }
-
-  async getDisplayCurrency(): Promise<DisplayCurrencyResponse> {
-    const response = await fetch(this.url("settings/display-currency"));
-    return handleResponse<DisplayCurrencyResponse>(response);
-  }
-
-  async setDisplayCurrency(currency: string): Promise<DisplayCurrencyResponse> {
-    const params: DisplayCurrencyRequest = { currency };
-    const response = await fetch(this.url("settings/display-currency", params), { method: "PUT" });
-    return handleResponse<DisplayCurrencyResponse>(response);
+    return handleResponse<HoldingResponse>(response);
   }
 }
