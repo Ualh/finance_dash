@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
 
-export type DisplayCurrency = "CHF";
+export type DisplayCurrency = "CHF" | "USD";
 
 interface DisplayCurrencyContextValue {
   currency: DisplayCurrency;
   setCurrency: (currency: DisplayCurrency) => Promise<void>;
+  loading: boolean;
 }
 
 const DisplayCurrencyContext = createContext<DisplayCurrencyContextValue | undefined>(undefined);
@@ -16,15 +17,22 @@ type DisplayCurrencyProviderProps = {
 };
 
 export const DisplayCurrencyProvider: React.FC<DisplayCurrencyProviderProps> = ({ children }: DisplayCurrencyProviderProps) => {
-  const [currency] = useState<DisplayCurrency>(DEFAULT_CURRENCY);
+  const [currency, setCurrencyState] = useState<DisplayCurrency>(DEFAULT_CURRENCY);
+  const [loading, setLoading] = useState(false);
 
   const setCurrency = useCallback(async (value: DisplayCurrency) => {
-    // no-op in v1; USD toggle comes in slice #3
+    setLoading(true);
+    try {
+      // no-op in v1; USD toggle comes in slice #3
+      setCurrencyState(value);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const value = useMemo<DisplayCurrencyContextValue>(
-    () => ({ currency, setCurrency }),
-    [currency, setCurrency]
+    () => ({ currency, setCurrency, loading }),
+    [currency, setCurrency, loading]
   );
 
   return <DisplayCurrencyContext.Provider value={value}>{children}</DisplayCurrencyContext.Provider>;
