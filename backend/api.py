@@ -5,11 +5,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .config import load_config
+from .csv_source.neon import archive_csv, derive_balance, parse_neon_csv
 from .database import SQLiteRepository
 from .fx import convert as fx_convert
 from .sync.engine import run_sync_all
@@ -117,6 +118,53 @@ def upsert_finpension_holding(body: HoldingInput, repo: Annotated[SQLiteReposito
         label=body.label,
     )
     return {"holding": holding}
+
+
+@app.post("/holdings/neon/upload")
+async def upload_neon_csv(
+    file: Annotated[UploadFile, File()],
+    repo: Annotated[SQLiteRepository, Depends(get_repository)],
+) -> dict:
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(400, "Only .csv files are accepted")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Uploaded file is empty")
+
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 10 MB)")
+
+    try:
+        rows = parse_neon_csv(content)
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+    if not rows:
+        raise HTTPException(400, "CSV contains no valid transaction rows")
+
+    config = load_config()
+    archive_csv(config.project_root, content)
+
+    anchor_date = repo.get_setting("neon_anchor_date")
+    anchor_amount_str = repo.get_setting("neon_anchor_amount")
+    anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
+
+    balance = derive_balance(rows, anchor_date, anchor_amount)
+
+    holding = repo.upsert_holding(
+        source="neon",
+        source_type="csv",
+        asset_class="cash",
+        value_chf=balance,
+        label="Neon",
+    )
+
+    return {
+        "balance": balance,
+        "transactions_parsed": len(rows),
+        "holding": holding,
+    }
 
 
 @app.get("/settings/{key}")
