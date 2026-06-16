@@ -212,3 +212,24 @@ class SQLiteRepository:
     def set_setting(self, key: str, value: str) -> None:
         self._connection.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
         self._connection.commit()
+
+    def get_cached_fx_rate(self, base: str, quote: str, valuation_date: str) -> Optional[float]:
+        row = self._connection.execute(
+            "SELECT rate FROM fx_rates WHERE base = ? AND quote = ? AND valuation_date = ? ORDER BY id DESC LIMIT 1",
+            (base, quote, valuation_date),
+        ).fetchone()
+        return row["rate"] if row else None
+
+    def get_latest_fx_rate(self, base: str, quote: str) -> Optional[float]:
+        row = self._connection.execute(
+            "SELECT rate FROM fx_rates WHERE base = ? AND quote = ? ORDER BY valuation_date DESC LIMIT 1",
+            (base, quote),
+        ).fetchone()
+        return row["rate"] if row else None
+
+    def put_fx_rate(self, base: str, quote: str, valuation_date: str, rate: float, source: str = "frankfurter") -> None:
+        self._connection.execute(
+            "INSERT OR REPLACE INTO fx_rates (base, quote, valuation_date, rate, source) VALUES (?, ?, ?, ?, ?)",
+            (base, quote, valuation_date, rate, source),
+        )
+        self._connection.commit()

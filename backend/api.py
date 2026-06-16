@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from .config import load_config
 from .database import SQLiteRepository
+from .fx import convert as fx_convert
 from .sync.engine import run_sync_all
 
 logger = logging.getLogger(__name__)
@@ -50,8 +51,12 @@ class HoldingInput(BaseModel):
     label: str | None = None
 
 
+class SettingInput(BaseModel):
+    value: str
+
+
 @app.get("/dashboard")
-def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)], currency: str = "CHF") -> dict:
     agg = repo.get_aggregate_holdings()
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     previous_snapshot = repo.get_latest_snapshot_before(today)
@@ -73,13 +78,27 @@ def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dic
             "sync_error": sync_error,
         }
 
-    return {
+    payload = {
         "total_chf": agg["total_chf"],
         "buckets": agg["buckets"],
         "delta_chf": delta_chf,
         "delta_pct": delta_pct,
         "sources": sources,
     }
+
+    target = currency.upper()
+    if target != "CHF":
+        conv = fx_convert(repo, agg["total_chf"], target)
+        payload["total_chf"] = conv["amount"]
+        payload["_fx"] = {"rate": conv["rate"], "stale": conv["stale"], "currency": target}
+        for bucket_name in ("available", "invested", "locked"):
+            bconv = fx_convert(repo, agg["buckets"].get(bucket_name, 0.0), target)
+            payload["buckets"][bucket_name] = bconv["amount"]
+        for src_name, src_info in sources.items():
+            sconv = fx_convert(repo, src_info["total_chf"], target)
+            payload["sources"][src_name]["total_chf"] = sconv["amount"]
+
+    return payload
 
 
 @app.post("/sync/all")
@@ -98,3 +117,15 @@ def upsert_finpension_holding(body: HoldingInput, repo: Annotated[SQLiteReposito
         label=body.label,
     )
     return {"holding": holding}
+
+
+@app.get("/settings/{key}")
+def get_setting(key: str, repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+    value = repo.get_setting(key)
+    return {"key": key, "value": value}
+
+
+@app.put("/settings/{key}")
+def put_setting(key: str, body: SettingInput, repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+    repo.set_setting(key, body.value)
+    return {"key": key, "value": body.value}
