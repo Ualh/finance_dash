@@ -1,4 +1,4 @@
-import type { DashboardResponse, HoldingResponse, SyncAllResponse } from "@/lib/types";
+import type { DashboardResponse, HoldingResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
 
 function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -25,8 +25,8 @@ export class ApiClient {
     return url.toString();
   }
 
-  async getDashboard(): Promise<DashboardResponse> {
-    const response = await fetch(this.url("dashboard"));
+  async getDashboard(currency?: string): Promise<DashboardResponse> {
+    const response = await fetch(this.url("dashboard", { currency }));
     return handleResponse<DashboardResponse>(response);
   }
 
@@ -42,5 +42,19 @@ export class ApiClient {
       body: JSON.stringify({ value_chf, label: label ?? null }),
     });
     return handleResponse<HoldingResponse>(response);
+  }
+
+  async getSetting(key: string): Promise<SettingResponse> {
+    const response = await fetch(this.url(`settings/${key}`));
+    return handleResponse<SettingResponse>(response);
+  }
+
+  async setSetting(key: string, value: string): Promise<SettingResponse> {
+    const response = await fetch(this.url(`settings/${key}`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    return handleResponse<SettingResponse>(response);
   }
 }

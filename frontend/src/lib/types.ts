@@ -5,6 +5,12 @@ export interface SourceInfo {
   sync_error: boolean;
 }
 
+export interface FxInfo {
+  rate: number;
+  stale: boolean;
+  currency: string;
+}
+
 export interface DashboardResponse {
   total_chf: number;
   buckets: {
@@ -15,6 +21,7 @@ export interface DashboardResponse {
   delta_chf: number | null;
   delta_pct: number | null;
   sources: Record<string, SourceInfo>;
+  _fx?: FxInfo;
 }
 
 export interface HoldingResponse {
@@ -24,4 +31,9 @@ export interface HoldingResponse {
 export interface SyncAllResponse {
   ok: string[];
   error: string[];
+}
+
+export interface SettingResponse {
+  key: string;
+  value: string | null;
 }

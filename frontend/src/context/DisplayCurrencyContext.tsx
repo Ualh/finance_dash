@@ -1,4 +1,6 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+
+import { useApiClient } from "@/hooks/useApiClient";
 
 export type DisplayCurrency = "CHF" | "USD";
 
@@ -17,18 +19,32 @@ type DisplayCurrencyProviderProps = {
 };
 
 export const DisplayCurrencyProvider: React.FC<DisplayCurrencyProviderProps> = ({ children }: DisplayCurrencyProviderProps) => {
+  const api = useApiClient();
   const [currency, setCurrencyState] = useState<DisplayCurrency>(DEFAULT_CURRENCY);
   const [loading, setLoading] = useState(false);
+  const [initialised, setInitialised] = useState(false);
+
+  useEffect(() => {
+    api.getSetting("display_currency").then((res) => {
+      if (res.value === "CHF" || res.value === "USD") {
+        setCurrencyState(res.value);
+      }
+    }).catch(() => {
+      // ignore; use default
+    }).finally(() => {
+      setInitialised(true);
+    });
+  }, [api]);
 
   const setCurrency = useCallback(async (value: DisplayCurrency) => {
     setLoading(true);
     try {
-      // no-op in v1; USD toggle comes in slice #3
+      await api.setSetting("display_currency", value);
       setCurrencyState(value);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [api]);
 
   const value = useMemo<DisplayCurrencyContextValue>(
     () => ({ currency, setCurrency, loading }),

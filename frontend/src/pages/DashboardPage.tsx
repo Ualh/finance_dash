@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useApiClient } from "@/hooks/useApiClient";
+import { useDisplayCurrency } from "@/context/DisplayCurrencyContext";
+import { CurrencyToggle } from "@/components/CurrencyToggle";
 import type { DashboardResponse } from "@/lib/types";
 import { DataState } from "@/components/DataState";
 import { SummaryCard } from "@/components/SummaryCard";
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat("de-CH", { style: "currency", currency: "CHF", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+const fmt = (n: number, currency = "CHF") =>
+  new Intl.NumberFormat("de-CH", { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const DashboardPage: React.FC = () => {
   const api = useApiClient();
+  const { currency } = useDisplayCurrency();
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -21,14 +24,14 @@ const DashboardPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.getDashboard();
+      const res = await api.getDashboard(currency);
       setData(res);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, currency]);
 
   useEffect(() => {
     fetch();
@@ -61,6 +64,8 @@ const DashboardPage: React.FC = () => {
     }
   }, [doRefresh]);
 
+  const displayCurrency = data?._fx?.currency ?? "CHF";
+
   const deltaColor = data?.delta_chf != null
     ? data.delta_chf >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
     : "text-slate-500 dark:text-slate-400";
@@ -73,7 +78,9 @@ const DashboardPage: React.FC = () => {
     >
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Dashboard</h2>
-        <button
+        <div className="flex items-center gap-2">
+          <CurrencyToggle size="sm" />
+          <button
           onClick={doRefresh}
           disabled={syncing}
           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
@@ -83,32 +90,38 @@ const DashboardPage: React.FC = () => {
           </svg>
           {syncing ? "Syncing…" : "Refresh"}
         </button>
+        </div>
       </div>
       <DataState loading={loading} error={error} empty={!data}>
         {data && (
           <>
+            {data._fx?.stale && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                FX rate stale (last known rate used)
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <SummaryCard
                 title="Net Worth"
-                value={fmt(data.total_chf)}
+                value={fmt(data.total_chf, displayCurrency)}
                 emphasis="primary"
               />
               <SummaryCard
                 title="Available"
-                value={fmt(data.buckets.available)}
+                value={fmt(data.buckets.available, displayCurrency)}
               />
               <SummaryCard
                 title="Invested"
-                value={fmt(data.buckets.invested)}
+                value={fmt(data.buckets.invested, displayCurrency)}
               />
               <SummaryCard
                 title="Locked"
-                value={fmt(data.buckets.locked)}
+                value={fmt(data.buckets.locked, displayCurrency)}
               />
             </div>
             {data.delta_chf !== null && (
               <p className={clsx("text-sm", deltaColor)}>
-                Delta J-1: {fmt(data.delta_chf)}
+                Delta J-1: {fmt(data.delta_chf, displayCurrency)}
                 {data.delta_pct != null && ` (${data.delta_pct >= 0 ? "+" : ""}${data.delta_pct}%)`}
               </p>
             )}
@@ -128,7 +141,7 @@ const DashboardPage: React.FC = () => {
                       <p className="text-xs text-slate-500">Last updated: {info.last_updated}</p>
                     </div>
                   </div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{fmt(info.total_chf)}</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{fmt(info.total_chf, displayCurrency)}</p>
                 </div>
               ))}
             </div>
