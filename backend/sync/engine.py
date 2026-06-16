@@ -57,6 +57,14 @@ class VIACSync:
         pass
 
 
+class BinanceSync:
+    name = "binance"
+
+    def sync(self, repo: SQLiteRepository) -> None:
+        from backend.sources.binance import sync_binance
+        sync_binance(repo)
+
+
 SYNC_SOURCES: list[SourceSync] = [
     FinpensionSync(),
     CSVUploadSync(),
@@ -64,6 +72,7 @@ SYNC_SOURCES: list[SourceSync] = [
     CoinRKingSync(),
     SwissquoteSync(),
     VIACSync(),
+    BinanceSync(),
 ]
 
 MANUAL_SOURCES = {"finpension", "csv_upload"}
