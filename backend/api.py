@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .config import load_config
 from .database import SQLiteRepository
+from .sync.engine import run_sync_all
 
 logger = logging.getLogger(__name__)
 
@@ -51,16 +53,39 @@ class HoldingInput(BaseModel):
 @app.get("/dashboard")
 def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
     agg = repo.get_aggregate_holdings()
-    latest_snapshot = repo.get_latest_snapshot()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    previous_snapshot = repo.get_latest_snapshot_before(today)
     delta_chf = None
-    if latest_snapshot:
-        delta_chf = agg["total_chf"] - latest_snapshot["total_chf"]
+    delta_pct = None
+    if previous_snapshot:
+        delta_chf = agg["total_chf"] - previous_snapshot["total_chf"]
+        if previous_snapshot["total_chf"]:
+            delta_pct = round(delta_chf / previous_snapshot["total_chf"] * 100, 2)
+
+    sources = {}
+    for src_name, src_info in agg["sources"].items():
+        last_log = repo.get_last_sync_log(src_name)
+        sync_error = bool(last_log and last_log["status"] == "error")
+        sources[src_name] = {
+            "total_chf": src_info["total_chf"],
+            "last_updated": src_info["last_updated"],
+            "last_sync": last_log["started_at"] if last_log else None,
+            "sync_error": sync_error,
+        }
+
     return {
         "total_chf": agg["total_chf"],
         "buckets": agg["buckets"],
         "delta_chf": delta_chf,
-        "sources": agg["sources"],
+        "delta_pct": delta_pct,
+        "sources": sources,
     }
+
+
+@app.post("/sync/all")
+def sync_all(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+    result = run_sync_all(repo)
+    return result
 
 
 @app.post("/holdings/finpension")

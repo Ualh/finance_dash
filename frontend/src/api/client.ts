@@ -1,4 +1,4 @@
-import type { DashboardResponse, HoldingResponse } from "@/lib/types";
+import type { DashboardResponse, HoldingResponse, SyncAllResponse } from "@/lib/types";
 
 function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -28,6 +28,11 @@ export class ApiClient {
   async getDashboard(): Promise<DashboardResponse> {
     const response = await fetch(this.url("dashboard"));
     return handleResponse<DashboardResponse>(response);
+  }
+
+  async syncAll(): Promise<SyncAllResponse> {
+    const response = await fetch(this.url("sync/all"), { method: "POST" });
+    return handleResponse<SyncAllResponse>(response);
   }
 
   async updateFinpension(value_chf: number, label?: string): Promise<HoldingResponse> {

@@ -21,7 +21,7 @@ LIQUIDITY_BUCKET: dict[str, str] = {
 class SQLiteRepository:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
-        self._connection = sqlite3.connect(database_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        self._connection = sqlite3.connect(database_path, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
         self._connection.execute("PRAGMA foreign_keys = ON;")
         self._connection.row_factory = sqlite3.Row
 
@@ -45,12 +45,13 @@ class SQLiteRepository:
             CREATE TABLE IF NOT EXISTS nw_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 snapshot_date TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'total',
                 total_chf REAL NOT NULL,
                 available_chf REAL NOT NULL,
                 invested_chf REAL NOT NULL,
                 locked_chf REAL NOT NULL,
                 created_at TEXT NOT NULL,
-                UNIQUE(snapshot_date)
+                UNIQUE(snapshot_date, source)
             );
 
             CREATE TABLE IF NOT EXISTS fx_rates (
@@ -81,18 +82,19 @@ class SQLiteRepository:
 
     def upsert_holding(self, source: str, source_type: str, asset_class: str, value_chf: float, label: Optional[str] = None) -> dict:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        label = label or ""
         cursor = self._connection.cursor()
         cursor.execute("""
             INSERT INTO holdings (source, source_type, asset_class, value_chf, label, last_updated)
             VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(source, source_type, COALESCE(label, '')) DO UPDATE SET
+            ON CONFLICT(source, source_type, label) DO UPDATE SET
                 value_chf = excluded.value_chf,
                 last_updated = excluded.last_updated
         """, (source, source_type, asset_class, value_chf, label, now))
         self._connection.commit()
         row = cursor.execute(
-            "SELECT * FROM holdings WHERE source = ? AND source_type = ? AND COALESCE(label, '') = ?",
-            (source, source_type, label or ""),
+            "SELECT * FROM holdings WHERE source = ? AND source_type = ? AND label = ?",
+            (source, source_type, label),
         ).fetchone()
         return dict(row)
 
@@ -122,6 +124,77 @@ class SQLiteRepository:
                 "last_updated": r["last_updated"],
             }
         return {"total_chf": total, "buckets": buckets, "sources": sources}
+
+    def upsert_snapshot(self, snapshot_date: str, source: str, total_chf: float,
+                        available_chf: float, invested_chf: float, locked_chf: float) -> dict:
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cursor = self._connection.cursor()
+        cursor.execute("""
+            INSERT INTO nw_snapshots (snapshot_date, source, total_chf, available_chf, invested_chf, locked_chf, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(snapshot_date, source) DO UPDATE SET
+                total_chf = excluded.total_chf,
+                available_chf = excluded.available_chf,
+                invested_chf = excluded.invested_chf,
+                locked_chf = excluded.locked_chf,
+                created_at = excluded.created_at
+        """, (snapshot_date, source, total_chf, available_chf, invested_chf, locked_chf, now))
+        self._connection.commit()
+        row = cursor.execute(
+            "SELECT * FROM nw_snapshots WHERE snapshot_date = ? AND source = ?",
+            (snapshot_date, source),
+        ).fetchone()
+        return dict(row)
+
+    def get_latest_snapshot_before(self, before_date: str) -> Optional[dict]:
+        cursor = self._connection.cursor()
+        row = cursor.execute(
+            "SELECT * FROM nw_snapshots WHERE source = 'total' AND snapshot_date < ? ORDER BY snapshot_date DESC LIMIT 1",
+            (before_date,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_source_aggregate(self, source: str) -> dict:
+        cursor = self._connection.cursor()
+        rows = cursor.execute(
+            "SELECT asset_class, value_chf FROM holdings WHERE source = ?", (source,)
+        ).fetchall()
+        total = 0.0
+        buckets: dict[str, float] = {"available": 0.0, "invested": 0.0, "locked": 0.0}
+        for r in rows:
+            val = r["value_chf"] or 0.0
+            total += val
+            bucket = LIQUIDITY_BUCKET.get(r["asset_class"], "locked")
+            buckets[bucket] = buckets.get(bucket, 0.0) + val
+        return {"total_chf": total, "buckets": buckets}
+
+    def list_sources(self) -> list[str]:
+        rows = self._connection.execute(
+            "SELECT DISTINCT source FROM holdings ORDER BY source"
+        ).fetchall()
+        return [r["source"] for r in rows]
+
+    def get_last_sync_log(self, source: str) -> Optional[dict]:
+        row = self._connection.execute(
+            "SELECT * FROM sync_log WHERE source = ? ORDER BY started_at DESC LIMIT 1",
+            (source,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def log_sync_start(self, source: str, started_at: str) -> None:
+        self._connection.execute(
+            "INSERT INTO sync_log (source, status, started_at) VALUES (?, 'running', ?)",
+            (source, started_at),
+        )
+        self._connection.commit()
+
+    def log_sync_end(self, source: str, status: str, message: str, started_at: str) -> None:
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self._connection.execute(
+            "UPDATE sync_log SET status = ?, message = ?, finished_at = ? WHERE source = ? AND started_at = ?",
+            (status, message, now, source, started_at),
+        )
+        self._connection.commit()
 
     def get_latest_snapshot(self) -> Optional[dict]:
         cursor = self._connection.cursor()

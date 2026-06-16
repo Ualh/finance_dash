@@ -1,3 +1,10 @@
+export interface SourceInfo {
+  total_chf: number;
+  last_updated: string;
+  last_sync: string | null;
+  sync_error: boolean;
+}
+
 export interface DashboardResponse {
   total_chf: number;
   buckets: {
@@ -6,9 +13,15 @@ export interface DashboardResponse {
     locked: number;
   };
   delta_chf: number | null;
-  sources: Record<string, { total_chf: number; last_updated: string }>;
+  delta_pct: number | null;
+  sources: Record<string, SourceInfo>;
 }
 
 export interface HoldingResponse {
   holding: Record<string, unknown>;
+}
+
+export interface SyncAllResponse {
+  ok: string[];
+  error: string[];
 }
