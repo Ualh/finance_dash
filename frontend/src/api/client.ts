@@ -1,4 +1,4 @@
-import type { DashboardResponse, HoldingResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
+import type { DashboardResponse, HoldingResponse, NeonUploadResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
 
 function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -42,6 +42,16 @@ export class ApiClient {
       body: JSON.stringify({ value_chf, label: label ?? null }),
     });
     return handleResponse<HoldingResponse>(response);
+  }
+
+  async uploadNeonCsv(file: File): Promise<NeonUploadResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(this.url("holdings/neon/upload"), {
+      method: "POST",
+      body: formData,
+    });
+    return handleResponse<NeonUploadResponse>(response);
   }
 
   async getSetting(key: string): Promise<SettingResponse> {

@@ -28,6 +28,12 @@ export interface HoldingResponse {
   holding: Record<string, unknown>;
 }
 
+export interface NeonUploadResponse {
+  balance: number;
+  transactions_parsed: number;
+  holding: Record<string, unknown>;
+}
+
 export interface SyncAllResponse {
   ok: string[];
   error: string[];
