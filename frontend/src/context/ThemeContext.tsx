@@ -1,8 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-/**
- * Shape of the theme context allowing consumers to inspect the current theme and toggle it.
- */
+import { useApiClient } from "@/hooks/useApiClient";
+
 export interface ThemeContextValue {
   theme: "light" | "dark";
   setTheme: (theme: "light" | "dark") => void;
@@ -10,8 +9,6 @@ export interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
-
-const prefersDarkScheme = () => window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
 
 const STORAGE_KEY = "finance_dash_theme";
 
@@ -29,26 +26,48 @@ type ThemeProviderProps = {
 };
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }: ThemeProviderProps) => {
-  const [theme, setThemeState] = useState<"light" | "dark">(() => {
-    const stored = localStorage.getItem(STORAGE_KEY) as "light" | "dark" | null;
-    if (stored === "light" || stored === "dark") {
-      return stored;
-    }
-    return prefersDarkScheme() ? "dark" : "light";
-  });
+  const api = useApiClient();
+  const [theme, setThemeState] = useState<"light" | "dark">("light");
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY) as "light" | "dark" | null;
+    const localTheme = stored === "light" || stored === "dark" ? stored : null;
+
+    api.getSetting("theme").then((res) => {
+      if (res.value === "light" || res.value === "dark") {
+        setThemeState(res.value);
+      } else if (localTheme) {
+        setThemeState(localTheme);
+        api.setSetting("theme", localTheme).catch(() => {});
+      }
+    }).catch(() => {
+      if (localTheme) {
+        setThemeState(localTheme);
+      }
+    }).finally(() => {
+      setLoaded(true);
+    });
+  }, [api]);
+
+  useEffect(() => {
+    if (!loaded) return;
     localStorage.setItem(STORAGE_KEY, theme);
     applyThemeClass(theme);
-  }, [theme]);
+  }, [theme, loaded]);
 
   const setTheme = useCallback((value: "light" | "dark") => {
     setThemeState(value);
-  }, []);
+    api.setSetting("theme", value).catch(() => {});
+  }, [api]);
 
   const toggleTheme = useCallback(() => {
-    setThemeState((current: "light" | "dark") => (current === "dark" ? "light" : "dark"));
-  }, []);
+    setThemeState((current: "light" | "dark") => {
+      const next = current === "dark" ? "light" : "dark";
+      api.setSetting("theme", next).catch(() => {});
+      return next;
+    });
+  }, [api]);
 
   const value = useMemo<ThemeContextValue>(() => ({ theme, setTheme, toggleTheme }), [theme, setTheme, toggleTheme]);
 

@@ -43,3 +43,27 @@ export interface SettingResponse {
   key: string;
   value: string | null;
 }
+
+export interface HoldingsListResponse {
+  holdings: Array<{
+    id: number;
+    source: string;
+    source_type: string;
+    asset_class: string;
+    value_chf: number;
+    label: string | null;
+    last_updated: string;
+  }>;
+}
+
+export interface HoldingUpdateResponse {
+  holding: {
+    id: number;
+    source: string;
+    source_type: string;
+    asset_class: string;
+    value_chf: number;
+    label: string | null;
+    last_updated: string;
+  };
+}
