@@ -5,8 +5,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import load_config
@@ -29,6 +32,11 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, title="finance_dash backend", version="0.2.0")
+
+dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if dist.is_dir():
+    app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -105,6 +113,7 @@ def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)], curren
     return payload
 
 
+@app.get("/sync/all")
 @app.post("/sync/all")
 def sync_all(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
     result = run_sync_all(repo)
