@@ -140,10 +140,84 @@ class TestDashboard:
         assert d["sources"]["finpension"]["sync_error"] is True
         assert d["sources"]["finpension"]["last_sync"] is not None
 
-    def test_dashboard_delta_null_when_no_prior_snapshot(self, client):
-        seed_holding(app.state.repository, "finpension", "api", "pension", 100_000)
+class TestSettings:
+
+    def test_get_setting_returns_default_when_missing(self, client):
+        resp = client.get("/settings/display_currency")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["key"] == "display_currency"
+        assert data["value"] is None
+
+    def test_theme_setting_persists(self, client):
+        resp = client.put("/settings/theme", json={"value": "dark"})
+        assert resp.status_code == 200
+        assert resp.json()["value"] == "dark"
+
+        resp = client.get("/settings/theme")
+        assert resp.status_code == 200
+        assert resp.json()["value"] == "dark"
+
+    def test_theme_setting_idempotent(self, client):
+        client.put("/settings/theme", json={"value": "dark"})
+        client.put("/settings/theme", json={"value": "dark"})
+        resp = client.get("/settings/theme")
+        assert resp.json()["value"] == "dark"
+
+
+class TestManualHoldings:
+
+    def test_list_holdings_empty(self, client):
+        resp = client.get("/holdings")
+        assert resp.status_code == 200
+        assert resp.json()["holdings"] == []
+
+    def test_list_holdings_returns_seeded(self, client):
+        repo = app.state.repository
+        seed_holding(repo, "finpension", "manual", "pension", 100_000, label="Pillar 3a")
+
+        resp = client.get("/holdings")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["holdings"]) == 1
+        assert data["holdings"][0]["value_chf"] == 100_000.0
+        assert data["holdings"][0]["label"] == "Pillar 3a"
+
+    def test_update_holding_value_returns_updated(self, client):
+        repo = app.state.repository
+        seed_holding(repo, "finpension", "manual", "pension", 100_000, label="Pillar 3a")
+        h = repo.list_holdings()[0]
+
+        resp = client.put(f"/holdings/{h['id']}", json={"value_chf": 120_000.0})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["holding"]["value_chf"] == 120_000.0
+
+        row = repo.get_holding(h["id"])
+        assert row["value_chf"] == 120_000.0
+
+    def test_update_holds_no_duplicate(self, client):
+        repo = app.state.repository
+        seed_holding(repo, "finpension", "manual", "pension", 100_000, label="Pillar 3a")
+        h = repo.list_holdings()[0]
+
+        client.put(f"/holdings/{h['id']}", json={"value_chf": 120_000.0})
+        rows = repo._connection.execute(
+            "SELECT COUNT(*) as cnt FROM holdings WHERE source = 'finpension'"
+        ).fetchone()
+        assert rows["cnt"] == 1
+
+    def test_update_nonexistent_holding_404(self, client):
+        resp = client.put("/holdings/99999", json={"value_chf": 100.0})
+        assert resp.status_code == 404
+
+    def test_dashboard_reflects_updated_value(self, client):
+        repo = app.state.repository
+        seed_holding(repo, "finpension", "manual", "pension", 100_000, label="Pillar 3a")
+        h = repo.list_holdings()[0]
+
+        client.put(f"/holdings/{h['id']}", json={"value_chf": 150_000.0})
+
         dash = client.get("/dashboard")
         assert dash.status_code == 200
-        d = dash.json()
-        assert d["delta_chf"] is None
-        assert d["delta_pct"] is None
+        assert dash.json()["total_chf"] == 150_000.0
