@@ -55,6 +55,9 @@ class HoldingInput(BaseModel):
 class SettingInput(BaseModel):
     value: str
 
+class HoldingUpdateInput(BaseModel):
+    value_chf: float
+
 
 @app.get("/dashboard")
 def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)], currency: str = "CHF") -> dict:
@@ -177,3 +180,21 @@ def get_setting(key: str, repo: Annotated[SQLiteRepository, Depends(get_reposito
 def put_setting(key: str, body: SettingInput, repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
     repo.set_setting(key, body.value)
     return {"key": key, "value": body.value}
+
+
+@app.get("/holdings")
+def list_holdings(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+    holdings = repo.list_holdings()
+    return {"holdings": holdings}
+
+
+@app.put("/holdings/{holding_id}")
+def update_holding_value(
+    holding_id: int,
+    body: HoldingUpdateInput,
+    repo: Annotated[SQLiteRepository, Depends(get_repository)],
+) -> dict:
+    holding = repo.update_holding_value(holding_id, body.value_chf)
+    if holding is None:
+        raise HTTPException(404, "Holding not found")
+    return {"holding": holding}

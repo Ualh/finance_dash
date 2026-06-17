@@ -103,6 +103,25 @@ class SQLiteRepository:
         rows = cursor.execute("SELECT * FROM holdings ORDER BY last_updated DESC").fetchall()
         return [dict(r) for r in rows]
 
+    def get_holding(self, holding_id: int) -> Optional[dict]:
+        row = self._connection.execute(
+            "SELECT * FROM holdings WHERE id = ?", (holding_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_holding_value(self, holding_id: int, value_chf: float) -> Optional[dict]:
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cursor = self._connection.cursor()
+        cursor.execute(
+            "UPDATE holdings SET value_chf = ?, last_updated = ? WHERE id = ?",
+            (value_chf, now, holding_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+        self._connection.commit()
+        row = cursor.execute("SELECT * FROM holdings WHERE id = ?", (holding_id,)).fetchone()
+        return dict(row)
+
     def get_aggregate_holdings(self) -> dict:
         cursor = self._connection.cursor()
         rows = cursor.execute("SELECT asset_class, value_chf FROM holdings").fetchall()
