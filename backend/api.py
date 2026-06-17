@@ -7,9 +7,10 @@ from typing import Annotated
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+import mimetypes
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .config import load_config
@@ -32,11 +33,6 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, title="finance_dash backend", version="0.2.0")
-
-dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-if dist.is_dir():
-    app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -207,3 +203,22 @@ def update_holding_value(
     if holding is None:
         raise HTTPException(404, "Holding not found")
     return {"holding": holding}
+
+
+dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if dist.is_dir():
+
+    @app.exception_handler(404)
+    async def serve_spa(request: Request, exc):
+        path = request.url.path.lstrip("/")
+        is_api = any(
+            path.startswith(p) or path == p.strip("/")
+            for p in ("dashboard", "health", "sync/", "holdings/", "settings/")
+        )
+        if is_api:
+            return JSONResponse(status_code=404, content={"detail": exc.detail or "Not Found"})
+        file_path = dist / path
+        if file_path.is_file():
+            content_type, _ = mimetypes.guess_type(str(file_path))
+            return FileResponse(str(file_path), media_type=content_type)
+        return FileResponse(str(dist / "index.html"))
