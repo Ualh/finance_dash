@@ -405,3 +405,63 @@ class TestUploadAccumulation:
         total = sum(r["amount"] for r in may_rows)
         expected = 2585.22 + total
         assert resp.json()["balance"] == expected
+
+
+class TestAnchorChangeRecomputes:
+
+    def test_changing_anchor_date_recomputes_balance(self, client, tmp_home):
+        repo = client.app.state.repository
+        repo.set_setting("neon_anchor_date", "2026-05-01")
+        repo.set_setting("neon_anchor_amount", "2585.22")
+
+        may = load_fixture("2026_5_account_statements_neon.csv")
+        client.post("/holdings/neon/upload", files={"file": ("may.csv", may, "text/csv")})
+
+        holdings = repo.list_holdings()
+        neon = [h for h in holdings if h["source"] == "neon"][0]
+        assert neon["value_chf"] == pytest.approx(1968.60)
+
+        resp = client.put("/settings/neon_anchor_date", json={"value": "2026-05-15"})
+        assert resp.status_code == 200
+
+        holdings = repo.list_holdings()
+        neon = [h for h in holdings if h["source"] == "neon"][0]
+        assert neon["value_chf"] == pytest.approx(2958.60)
+
+    def test_changing_anchor_amount_recomputes_balance(self, client, tmp_home):
+        repo = client.app.state.repository
+        repo.set_setting("neon_anchor_date", "2026-05-01")
+        repo.set_setting("neon_anchor_amount", "2585.22")
+
+        may = load_fixture("2026_5_account_statements_neon.csv")
+        client.post("/holdings/neon/upload", files={"file": ("may.csv", may, "text/csv")})
+
+        holdings = repo.list_holdings()
+        neon = [h for h in holdings if h["source"] == "neon"][0]
+        assert neon["value_chf"] == pytest.approx(1968.60)
+
+        resp = client.put("/settings/neon_anchor_amount", json={"value": "3000.0"})
+        assert resp.status_code == 200
+
+        holdings = repo.list_holdings()
+        neon = [h for h in holdings if h["source"] == "neon"][0]
+        assert neon["value_chf"] == pytest.approx(2383.38)
+
+    def test_changing_non_anchor_setting_does_not_touch_holding(self, client, tmp_home):
+        repo = client.app.state.repository
+        repo.set_setting("neon_anchor_date", "2026-05-01")
+        repo.set_setting("neon_anchor_amount", "2585.22")
+
+        may = load_fixture("2026_5_account_statements_neon.csv")
+        client.post("/holdings/neon/upload", files={"file": ("may.csv", may, "text/csv")})
+
+        holdings = repo.list_holdings()
+        neon = [h for h in holdings if h["source"] == "neon"][0]
+        original_value = neon["value_chf"]
+
+        resp = client.put("/settings/display_currency", json={"value": "USD"})
+        assert resp.status_code == 200
+
+        holdings = repo.list_holdings()
+        neon = [h for h in holdings if h["source"] == "neon"][0]
+        assert neon["value_chf"] == original_value

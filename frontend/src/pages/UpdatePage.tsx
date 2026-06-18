@@ -48,6 +48,9 @@ const UpdatePage: React.FC = () => {
       setAnchorStatus({ ok: false, msg: "Please enter a valid date and amount." });
       return;
     }
+    if (!window.confirm("Changing the anchor will recompute your entire Neon balance. Are you sure?")) {
+      return;
+    }
     setAnchorSubmitting(true);
     setAnchorStatus(null);
     try {

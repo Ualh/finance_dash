@@ -191,6 +191,21 @@ def get_setting(key: str, repo: Annotated[SQLiteRepository, Depends(get_reposito
 @app.put("/settings/{key}")
 def put_setting(key: str, body: SettingInput, repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
     repo.set_setting(key, body.value)
+
+    if key in ("neon_anchor_date", "neon_anchor_amount"):
+        anchor_date = repo.get_setting("neon_anchor_date")
+        anchor_amount_str = repo.get_setting("neon_anchor_amount")
+        anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
+        all_transactions = repo.get_all_neon_transactions()
+        balance = compute_balance_from_ledger(all_transactions, anchor_date, anchor_amount)
+        repo.upsert_holding(
+            source="neon",
+            source_type="csv",
+            asset_class="cash",
+            value_chf=balance,
+            label="Neon",
+        )
+
     return {"key": key, "value": body.value}
 
 

@@ -25,6 +25,13 @@ const SettingsPage: React.FC = () => {
   const [editValue, setEditValue] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
 
+  const [anchorDate, setAnchorDate] = useState("");
+  const [anchorAmount, setAnchorAmount] = useState("");
+  const [anchorPrevDate, setAnchorPrevDate] = useState("");
+  const [anchorPrevAmount, setAnchorPrevAmount] = useState("");
+  const [anchorStatus, setAnchorStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [anchorSubmitting, setAnchorSubmitting] = useState(false);
+
   const loadHoldings = useCallback(async () => {
     try {
       const res = await api.listHoldings();
@@ -35,9 +42,27 @@ const SettingsPage: React.FC = () => {
     }
   }, [api]);
 
+  const loadAnchor = useCallback(async () => {
+    try {
+      const [dateRes, amountRes] = await Promise.all([
+        api.getSetting("neon_anchor_date"),
+        api.getSetting("neon_anchor_amount"),
+      ]);
+      const d = dateRes.value ?? "";
+      const a = amountRes.value ?? "";
+      setAnchorDate(d);
+      setAnchorAmount(a);
+      setAnchorPrevDate(d);
+      setAnchorPrevAmount(a);
+    } catch {
+      // ignore
+    }
+  }, [api]);
+
   useEffect(() => {
     loadHoldings();
-  }, [loadHoldings]);
+    loadAnchor();
+  }, [loadHoldings, loadAnchor]);
 
   const handleEditStart = (h: { id: number; value_chf: number }) => {
     setEditId(h.id);
@@ -62,6 +87,31 @@ const SettingsPage: React.FC = () => {
       // ignore
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const handleAnchorSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = parseFloat(anchorAmount);
+    if (!anchorDate || isNaN(num)) {
+      setAnchorStatus({ ok: false, msg: "Please enter a valid date and amount." });
+      return;
+    }
+    if (!window.confirm("Changing the anchor will recompute your entire Neon balance. Are you sure?")) {
+      return;
+    }
+    setAnchorSubmitting(true);
+    setAnchorStatus(null);
+    try {
+      await api.setSetting("neon_anchor_date", anchorDate);
+      await api.setSetting("neon_anchor_amount", anchorAmount);
+      setAnchorPrevDate(anchorDate);
+      setAnchorPrevAmount(anchorAmount);
+      setAnchorStatus({ ok: true, msg: "Anchor balance saved — Neon holding recomputed." });
+    } catch (err) {
+      setAnchorStatus({ ok: false, msg: (err as Error).message });
+    } finally {
+      setAnchorSubmitting(false);
     }
   };
 
@@ -101,6 +151,45 @@ const SettingsPage: React.FC = () => {
             </p>
           </div>
           <CurrencyToggle size="md" />
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-100 mb-3">Neon Anchor Balance</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+            Changing the anchor recomputes the Neon balance from all stored transactions.
+          </p>
+          <form onSubmit={handleAnchorSave} className="space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[140px]">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={anchorDate}
+                  onChange={(e) => setAnchorDate(e.target.value)}
+                  className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div className="flex-1 min-w-[140px]">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Amount (CHF)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={anchorAmount}
+                  onChange={(e) => setAnchorAmount(e.target.value)}
+                  placeholder="e.g. 5000.00"
+                  className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500"
+                />
+              </div>
+              <Button type="submit" disabled={anchorSubmitting}>
+                {anchorSubmitting ? "Saving..." : "Save Anchor"}
+              </Button>
+            </div>
+          </form>
+          {anchorStatus && (
+            <p className={`mt-2 text-sm ${anchorStatus.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+              {anchorStatus.msg}
+            </p>
+          )}
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
