@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .config import load_config
-from .csv_source.neon import archive_csv, derive_balance, parse_neon_csv
+from .csv_source.neon import archive_csv, parse_neon_csv
 from .database import SQLiteRepository
 from .fx import convert as fx_convert
 from .sync.engine import run_sync_all
@@ -154,11 +154,13 @@ async def upload_neon_csv(
     config = load_config()
     archive_csv(config.project_root, content)
 
+    imported = repo.import_neon_transactions(content, file.filename, rows)
+
     anchor_date = repo.get_setting("neon_anchor_date")
     anchor_amount_str = repo.get_setting("neon_anchor_amount")
     anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
 
-    balance = derive_balance(rows, anchor_date, anchor_amount)
+    balance = repo.recompute_neon_balance(anchor_date, anchor_amount)
 
     holding = repo.upsert_holding(
         source="neon",
@@ -170,7 +172,31 @@ async def upload_neon_csv(
 
     return {
         "balance": balance,
-        "transactions_parsed": len(rows),
+        "transactions_parsed": imported,
+        "total_transactions": repo.get_neon_transaction_count(),
+        "holding": holding,
+    }
+
+
+@app.post("/holdings/neon/recompute")
+def recompute_neon_holding(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+    anchor_date = repo.get_setting("neon_anchor_date")
+    anchor_amount_str = repo.get_setting("neon_anchor_amount")
+    anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
+
+    balance = repo.recompute_neon_balance(anchor_date, anchor_amount)
+
+    holding = repo.upsert_holding(
+        source="neon",
+        source_type="csv",
+        asset_class="cash",
+        value_chf=balance,
+        label="Neon",
+    )
+
+    return {
+        "balance": balance,
+        "total_transactions": repo.get_neon_transaction_count(),
         "holding": holding,
     }
 

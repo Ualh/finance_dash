@@ -56,6 +56,12 @@ export interface HoldingsListResponse {
   }>;
 }
 
+export interface NeonRecomputeResponse {
+  balance: number;
+  total_transactions: number;
+  holding: Record<string, unknown>;
+}
+
 export interface HoldingUpdateResponse {
   holding: {
     id: number;

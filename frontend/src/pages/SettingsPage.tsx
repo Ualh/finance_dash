@@ -25,6 +25,33 @@ const SettingsPage: React.FC = () => {
   const [editValue, setEditValue] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
 
+  const [anchorDate, setAnchorDate] = useState("");
+  const [anchorAmount, setAnchorAmount] = useState("");
+  const [existingAnchor, setExistingAnchor] = useState(false);
+  const [anchorLoaded, setAnchorLoaded] = useState(false);
+  const [anchorSaving, setAnchorSaving] = useState(false);
+  const [anchorStatus, setAnchorStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingAnchor, setPendingAnchor] = useState<{ date: string; amount: string } | null>(null);
+
+  const loadAnchors = useCallback(async () => {
+    try {
+      const [dateRes, amountRes] = await Promise.all([
+        api.getSetting("neon_anchor_date"),
+        api.getSetting("neon_anchor_amount"),
+      ]);
+      const hasAnchor = dateRes.value !== null && amountRes.value !== null;
+      setExistingAnchor(hasAnchor);
+      if (hasAnchor) {
+        setAnchorDate(dateRes.value!);
+        setAnchorAmount(amountRes.value!);
+      }
+      setAnchorLoaded(true);
+    } catch {
+      setAnchorLoaded(true);
+    }
+  }, [api]);
+
   const loadHoldings = useCallback(async () => {
     try {
       const res = await api.listHoldings();
@@ -37,7 +64,52 @@ const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     loadHoldings();
-  }, [loadHoldings]);
+    loadAnchors();
+  }, [loadHoldings, loadAnchors]);
+
+  const handleAnchorSave = async (date: string, amount: string) => {
+    const num = parseFloat(amount);
+    if (!date || isNaN(num)) {
+      setAnchorStatus({ ok: false, msg: "Please enter a valid date and amount." });
+      return;
+    }
+    setAnchorSaving(true);
+    setAnchorStatus(null);
+    setShowConfirm(false);
+    try {
+      await api.setSetting("neon_anchor_date", date);
+      await api.setSetting("neon_anchor_amount", amount);
+      setAnchorDate(date);
+      setAnchorAmount(amount);
+      setExistingAnchor(true);
+
+      const recomputeRes = await api.recomputeNeonHolding();
+      setAnchorStatus({
+        ok: true,
+        msg: `Anchor saved. Neon balance recomputed: CHF ${recomputeRes.balance.toLocaleString("de-CH", { minimumFractionDigits: 2 })} (${recomputeRes.total_transactions} transactions).`,
+      });
+    } catch (err) {
+      setAnchorStatus({ ok: false, msg: (err as Error).message });
+    } finally {
+      setAnchorSaving(false);
+      setPendingAnchor(null);
+    }
+  };
+
+  const handleAnchorSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = parseFloat(anchorAmount);
+    if (!anchorDate || isNaN(num)) {
+      setAnchorStatus({ ok: false, msg: "Please enter a valid date and amount." });
+      return;
+    }
+    if (existingAnchor) {
+      setPendingAnchor({ date: anchorDate, amount: anchorAmount });
+      setShowConfirm(true);
+    } else {
+      handleAnchorSave(anchorDate, anchorAmount);
+    }
+  };
 
   const handleEditStart = (h: { id: number; value_chf: number }) => {
     setEditId(h.id);
@@ -102,6 +174,100 @@ const SettingsPage: React.FC = () => {
           </div>
           <CurrencyToggle size="md" />
         </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">Neon Anchor</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            {anchorLoaded && existingAnchor
+              ? `Current anchor: ${anchorDate} — CHF ${parseFloat(anchorAmount).toLocaleString("de-CH", { minimumFractionDigits: 2 })}`
+              : anchorLoaded
+                ? "No anchor set yet."
+                : "Loading…"}
+          </p>
+          {anchorLoaded && (
+            <form onSubmit={handleAnchorSubmit} className="mt-3 max-w-md space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Anchor Date
+                </label>
+                <input
+                  type="date"
+                  value={anchorDate}
+                  onChange={(e) => setAnchorDate(e.target.value)}
+                  className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Anchor Amount (CHF)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={anchorAmount}
+                  onChange={(e) => setAnchorAmount(e.target.value)}
+                  placeholder="e.g. 5000.00"
+                  className="block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={anchorSaving}>
+                  {anchorSaving ? "Saving…" : existingAnchor ? "Update Anchor" : "Set Anchor"}
+                </Button>
+                {existingAnchor && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnchorDate("");
+                      setAnchorAmount("");
+                      setExistingAnchor(false);
+                      setAnchorStatus(null);
+                    }}
+                    className="text-xs text-slate-500 underline hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {anchorStatus && (
+                <p className={`text-sm ${anchorStatus.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                  {anchorStatus.msg}
+                </p>
+              )}
+            </form>
+          )}
+        </div>
+
+        {showConfirm && pendingAnchor && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                Change Neon Anchor?
+              </p>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                This recomputes your whole Neon balance from the stored ledger — are you sure?
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowConfirm(false);
+                    setPendingAnchor(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => handleAnchorSave(pendingAnchor.date, pendingAnchor.amount)}
+                >
+                  Confirm
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
           <p className="text-sm font-medium text-slate-800 dark:text-slate-100 mb-3">Manual Holdings</p>
