@@ -10,6 +10,20 @@ dist/
 # Runtime data
 data/
 
+# Local financial data — MUST NOT be published (privacy-first; repo is public)
+finance_dash.db
+*.db
+*.sqlite
+*.sqlite3
+# Real Neon account statement exports at repo root (test fixtures under
+# backend/tests/fixtures/ are intentionally NOT matched by this anchored rule)
+/*account_statements*.csv
+
+# Sandcastle agent orchestration tooling (local, not the app)
+.sandcastle/
+/package.json
+/package-lock.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
