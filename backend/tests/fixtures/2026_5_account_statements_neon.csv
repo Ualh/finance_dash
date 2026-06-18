@@ -10,3 +10,4 @@ Date;Amount;Original amount;Original currency;Exchange rate;Description;Subject;
 "2026-05-10";"-60.00";"-60.00";"CHF";"1.0";"Swisscom";"Phone";"Utilities";"";"";""
 "2026-05-05";"-30.00";"-30.00";"CHF";"1.0";"Netflix";"Subscription";"Entertainment";"";"";""
 "2026-05-01";"-1000.00";"-1000.00";"CHF";"1.0";"Transfer Savings";"Transfer";"Savings";"";"";""
+"2026-05-01";"600.00";"600.00";"CHF";"1.0";"Space Transfer";"Savings";"Savings";"";"";"yes"

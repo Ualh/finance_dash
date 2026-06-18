@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .config import load_config
-from .csv_source.neon import archive_csv, derive_balance, parse_neon_csv
+from .csv_source.neon import archive_csv, compute_balance_from_ledger, parse_neon_csv
 from .database import SQLiteRepository
 from .fx import convert as fx_convert
 from .sync.engine import run_sync_all
@@ -154,11 +154,18 @@ async def upload_neon_csv(
     config = load_config()
     archive_csv(config.project_root, content)
 
+    dates = sorted(r["date"] for r in rows)
+    min_date = dates[0]
+    max_date = dates[-1]
+
+    repo.replace_neon_transactions(min_date, max_date, rows)
+
     anchor_date = repo.get_setting("neon_anchor_date")
     anchor_amount_str = repo.get_setting("neon_anchor_amount")
     anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
 
-    balance = derive_balance(rows, anchor_date, anchor_amount)
+    all_transactions = repo.get_all_neon_transactions()
+    balance = compute_balance_from_ledger(all_transactions, anchor_date, anchor_amount)
 
     holding = repo.upsert_holding(
         source="neon",

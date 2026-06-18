@@ -77,6 +77,13 @@ class SQLiteRepository:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS neon_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                description TEXT NOT NULL DEFAULT ''
+            );
         """)
         self._connection.commit()
 
@@ -252,3 +259,25 @@ class SQLiteRepository:
             (base, quote, valuation_date, rate, source),
         )
         self._connection.commit()
+
+    def replace_neon_transactions(self, min_date: str, max_date: str, rows: list[dict]) -> int:
+        cursor = self._connection.cursor()
+        cursor.execute(
+            "DELETE FROM neon_transactions WHERE date >= ? AND date <= ?",
+            (min_date, max_date),
+        )
+        inserted = 0
+        for r in rows:
+            cursor.execute(
+                "INSERT INTO neon_transactions (date, amount, description) VALUES (?, ?, ?)",
+                (r["date"], r["amount"], r.get("description", "")),
+            )
+            inserted += 1
+        self._connection.commit()
+        return inserted
+
+    def get_all_neon_transactions(self) -> list[dict]:
+        rows = self._connection.execute(
+            "SELECT date, amount FROM neon_transactions ORDER BY date DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]

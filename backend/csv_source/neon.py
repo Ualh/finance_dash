@@ -47,7 +47,8 @@ def parse_neon_csv(content: str | bytes) -> list[dict]:
             amount = float(amount_str)
         except ValueError:
             raise NeonParseError(f"Row {i}: invalid Amount value {amount_str!r}")
-        rows.append({"date": date_str, "amount": amount})
+        description = cleaned.get("Description", "")
+        rows.append({"date": date_str, "amount": amount, "description": description})
 
     return rows
 
@@ -64,6 +65,21 @@ def derive_balance(
 
     filtered = [r for r in rows if r.get("date", "") >= anchor_date]
     delta = sum(r["amount"] for r in filtered)
+    return anchor_amount + delta
+
+
+def compute_balance_from_ledger(
+    transactions: list[dict],
+    anchor_date: Optional[str] = None,
+    anchor_amount: Optional[float] = None,
+) -> float:
+    if anchor_date is None or anchor_amount is None:
+        if not transactions:
+            return 0.0
+        return sum(t["amount"] for t in transactions)
+
+    filtered = [t for t in transactions if t.get("date", "") >= anchor_date]
+    delta = sum(t["amount"] for t in filtered)
     return anchor_amount + delta
 
 
