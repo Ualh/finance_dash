@@ -154,11 +154,18 @@ async def upload_neon_csv(
     config = load_config()
     archive_csv(config.project_root, content)
 
+    dates = [r["date"] for r in rows]
+    min_date = min(dates)
+    max_date = max(dates)
+    repo.replace_neon_transactions_in_date_range(min_date, max_date, rows)
+
+    all_rows = repo.get_all_neon_transactions()
+
     anchor_date = repo.get_setting("neon_anchor_date")
     anchor_amount_str = repo.get_setting("neon_anchor_amount")
     anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
 
-    balance = derive_balance(rows, anchor_date, anchor_amount)
+    balance = derive_balance(all_rows, anchor_date, anchor_amount)
 
     holding = repo.upsert_holding(
         source="neon",
