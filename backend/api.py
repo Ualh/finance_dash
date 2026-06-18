@@ -156,11 +156,7 @@ async def upload_neon_csv(
 
     imported = repo.import_neon_transactions(content, file.filename, rows)
 
-    anchor_date = repo.get_setting("neon_anchor_date")
-    anchor_amount_str = repo.get_setting("neon_anchor_amount")
-    anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
-
-    balance = repo.recompute_neon_balance(anchor_date, anchor_amount)
+    balance = repo.recompute_neon_balance(*_load_neon_anchor(repo))
 
     holding = repo.upsert_holding(
         source="neon",
@@ -178,13 +174,16 @@ async def upload_neon_csv(
     }
 
 
-@app.post("/holdings/neon/recompute")
-def recompute_neon_holding(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+def _load_neon_anchor(repo: SQLiteRepository) -> tuple[str | None, float | None]:
     anchor_date = repo.get_setting("neon_anchor_date")
     anchor_amount_str = repo.get_setting("neon_anchor_amount")
     anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
+    return anchor_date, anchor_amount
 
-    balance = repo.recompute_neon_balance(anchor_date, anchor_amount)
+
+@app.post("/holdings/neon/recompute")
+def recompute_neon_holding(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+    balance = repo.recompute_neon_balance(*_load_neon_anchor(repo))
 
     holding = repo.upsert_holding(
         source="neon",

@@ -11,7 +11,6 @@ from backend.config import AppConfig
 from backend.csv_source.neon import (
     NeonParseError,
     archive_csv,
-    derive_balance,
     get_archive_dir,
     parse_neon_csv,
 )
@@ -72,38 +71,51 @@ class TestNeonParser:
             parse_neon_csv(b"")
 
 
-class TestDeriveBalance:
+class TestRecomputeNeonBalance:
 
-    def test_without_anchor_uses_all_rows(self):
-        rows = [{"date": "2026-06-01", "amount": 100.0}, {"date": "2026-05-01", "amount": -50.0}]
-        assert derive_balance(rows) == 50.0
+    def _insert(self, rows: list[dict]) -> None:
+        repo = app.state.repository
+        cursor = repo._connection.cursor()
+        cursor.execute(
+            "INSERT INTO neon_uploads (file_hash, filename, uploaded_at) VALUES (?, ?, ?)",
+            ("hash", "test.csv", "2026-01-01T00:00:00"),
+        )
+        upload_id = cursor.lastrowid
+        cursor.executemany(
+            "INSERT INTO neon_transactions (date, amount, upload_id) VALUES (?, ?, ?)",
+            [(r["date"], r["amount"], upload_id) for r in rows],
+        )
+        repo._connection.commit()
 
-    def test_with_anchor_sums_post_anchor(self):
-        rows = [
+    def test_without_anchor_uses_all_rows(self, tmp_home):
+        self._insert([
+            {"date": "2026-06-01", "amount": 100.0},
+            {"date": "2026-05-01", "amount": -50.0},
+        ])
+        assert app.state.repository.recompute_neon_balance(None, None) == 50.0
+
+    def test_with_anchor_sums_post_anchor(self, tmp_home):
+        self._insert([
             {"date": "2026-06-10", "amount": -30.0},
             {"date": "2026-06-05", "amount": 200.0},
             {"date": "2026-06-01", "amount": -50.0},
             {"date": "2026-05-20", "amount": -100.0},
-        ]
-        balance = derive_balance(rows, anchor_date="2026-06-01", anchor_amount=1000.0)
-        expected = 1000.0 + (-30.0) + 200.0 + (-50.0)
-        assert balance == expected
+        ])
+        balance = app.state.repository.recompute_neon_balance("2026-06-01", 1000.0)
+        assert balance == 1000.0 + (-30.0) + 200.0 + (-50.0)
 
-    def test_anchor_filters_correctly(self):
-        rows = [
+    def test_anchor_filters_correctly(self, tmp_home):
+        self._insert([
             {"date": "2026-06-15", "amount": 500.0},
             {"date": "2026-06-10", "amount": -100.0},
-        ]
-        balance = derive_balance(rows, anchor_date="2026-06-12", anchor_amount=2000.0)
-        assert balance == 2000.0 + 500.0
+        ])
+        assert app.state.repository.recompute_neon_balance("2026-06-12", 2000.0) == 2000.0 + 500.0
 
-    def test_no_rows_with_anchor_returns_anchor(self):
-        rows = []
-        balance = derive_balance(rows, anchor_date="2026-06-01", anchor_amount=3000.0)
-        assert balance == 3000.0
+    def test_no_rows_with_anchor_returns_anchor(self, tmp_home):
+        assert app.state.repository.recompute_neon_balance("2026-06-01", 3000.0) == 3000.0
 
-    def test_no_rows_no_anchor_returns_zero(self):
-        assert derive_balance([]) == 0.0
+    def test_no_rows_no_anchor_returns_zero(self, tmp_home):
+        assert app.state.repository.recompute_neon_balance(None, None) == 0.0
 
 
 class TestArchiveCsv:

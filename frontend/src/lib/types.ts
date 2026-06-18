@@ -31,6 +31,7 @@ export interface HoldingResponse {
 export interface NeonUploadResponse {
   balance: number;
   transactions_parsed: number;
+  total_transactions: number;
   holding: Record<string, unknown>;
 }
 
