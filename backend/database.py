@@ -267,11 +267,10 @@ class SQLiteRepository:
             (min_date, max_date),
         )
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        for row in rows:
-            cursor.execute(
-                "INSERT INTO neon_transactions (date, amount, created_at) VALUES (?, ?, ?)",
-                (row["date"], row["amount"], now),
-            )
+        cursor.executemany(
+            "INSERT INTO neon_transactions (date, amount, created_at) VALUES (?, ?, ?)",
+            [(r["date"], r["amount"], now) for r in rows],
+        )
         self._connection.commit()
 
     def get_all_neon_transactions(self) -> list[dict]:

@@ -154,9 +154,8 @@ async def upload_neon_csv(
     config = load_config()
     archive_csv(config.project_root, content)
 
-    dates = [r["date"] for r in rows]
-    min_date = min(dates)
-    max_date = max(dates)
+    min_date = min(r["date"] for r in rows)
+    max_date = max(r["date"] for r in rows)
     repo.replace_neon_transactions_in_date_range(min_date, max_date, rows)
 
     all_rows = repo.get_all_neon_transactions()
