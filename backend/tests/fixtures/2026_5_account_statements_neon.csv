@@ -1,7 +1,7 @@
 Date;Amount;Original amount;Original currency;Exchange rate;Description;Subject;Category;Tags;Wise;Spaces
 "2026-05-31";"-150.00";"-150.00";"CHF";"1.0";"COOP";"Groceries";"Food";"";"";""
 "2026-05-30";"-45.00";"-45.00";"CHF";"1.0";"CAFE";"Lunch";"Food";"";"";""
-"2026-05-28";"2500.00";"2500.00";"CHF";"1.0";"Salary Corp";"Salary";"Income";"";"";""
+"2026-05-28";"668.38";"668.38";"CHF";"1.0";"Salary Corp";"Salary";"Income";"";"";""
 "2026-05-25";"-200.00";"-200.00";"CHF";"1.0";"ZKB ATM";"Withdrawal";"Cash";"";"";""
 "2026-05-20";"-80.00";"-80.00";"CHF";"1.0";"Spotify";"Subscription";"Entertainment";"";"";""
 "2026-05-18";"-120.00";"-120.00";"CHF";"1.0";"Migros";"Groceries";"Food";"";"";""

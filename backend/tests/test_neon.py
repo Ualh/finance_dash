@@ -45,7 +45,7 @@ class TestNeonParser:
         assert len(rows) == 10
 
         total = sum(r["amount"] for r in rows)
-        assert total == 1550.0
+        assert total == pytest.approx(-167.77)
 
     def test_empty_csv_raises_error(self):
         content = load_fixture("empty.csv")
@@ -241,7 +241,7 @@ class TestUploadEndpoint:
         resp = client.post("/holdings/neon/upload", files={"file": ("may.csv", may, "text/csv")})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["balance"] == 7205.0
+        assert data["balance"] == pytest.approx(5373.38)
 
 
 class TestLedgerPersistence:
@@ -309,21 +309,44 @@ class TestUploadAccumulation:
         resp1 = client.post("/holdings/neon/upload", files={"file": ("may.csv", may, "text/csv")})
         assert resp1.status_code == 200
         may_balance = resp1.json()["balance"]
+        # Canonical scenario: anchor 2585.22 @ 2026-05-01 → May balance = 1968.60
+        assert may_balance == pytest.approx(1968.60)
 
         june = load_fixture("2026_6_account_statements_neon.csv")
         resp2 = client.post("/holdings/neon/upload", files={"file": ("june.csv", june, "text/csv")})
         assert resp2.status_code == 200
         june_balance = resp2.json()["balance"]
+        # Canonical scenario: + June (-167.77) → 1800.83
+        assert june_balance == pytest.approx(1800.83)
 
         all_txs = repo.get_all_neon_transactions()
         assert len(all_txs) == 22
 
         expected_may = 2585.22 + sum(r["amount"] for r in parse_neon_csv(may))
-        assert may_balance == expected_may
+        assert may_balance == pytest.approx(expected_may)
 
         all_parsed = parse_neon_csv(may) + parse_neon_csv(june)
         expected_june = 2585.22 + sum(r["amount"] for r in all_parsed)
-        assert june_balance == expected_june
+        assert june_balance == pytest.approx(expected_june)
+
+    def test_reupload_june_leaves_balance_unchanged(self, client, tmp_home):
+        repo = client.app.state.repository
+        repo.set_setting("neon_anchor_date", "2026-05-01")
+        repo.set_setting("neon_anchor_amount", "2585.22")
+
+        may = load_fixture("2026_5_account_statements_neon.csv")
+        june = load_fixture("2026_6_account_statements_neon.csv")
+
+        client.post("/holdings/neon/upload", files={"file": ("may.csv", may, "text/csv")})
+        client.post("/holdings/neon/upload", files={"file": ("june.csv", june, "text/csv")})
+
+        # Re-upload June - balance should stay at 1800.83
+        resp = client.post("/holdings/neon/upload", files={"file": ("june.csv", june, "text/csv")})
+        assert resp.status_code == 200
+        assert resp.json()["balance"] == pytest.approx(1800.83)
+
+        all_txs = repo.get_all_neon_transactions()
+        assert len(all_txs) == 22
 
     def test_reupload_may_after_june_stays_correct(self, client, tmp_home):
         repo = client.app.state.repository
@@ -339,9 +362,10 @@ class TestUploadAccumulation:
         all_parsed = parse_neon_csv(may) + parse_neon_csv(june)
         expected = 2585.22 + sum(r["amount"] for r in all_parsed)
 
+        # Re-upload May after June - balance should stay at 1800.83
         resp = client.post("/holdings/neon/upload", files={"file": ("may.csv", may, "text/csv")})
         assert resp.status_code == 200
-        assert resp.json()["balance"] == expected
+        assert resp.json()["balance"] == pytest.approx(1800.83)
 
         all_txs = repo.get_all_neon_transactions()
         assert len(all_txs) == 22
