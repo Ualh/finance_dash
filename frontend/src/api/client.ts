@@ -1,4 +1,4 @@
-import type { DashboardResponse, HoldingResponse, HoldingUpdateResponse, HoldingsListResponse, NeonUploadResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
+import type { DashboardResponse, HoldingResponse, HoldingUpdateResponse, HoldingsListResponse, NeonRecomputeResponse, NeonUploadResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
 
 function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -71,6 +71,11 @@ export class ApiClient {
   async listHoldings(): Promise<HoldingsListResponse> {
     const response = await fetch(this.url("holdings"));
     return handleResponse<HoldingsListResponse>(response);
+  }
+
+  async recomputeNeonHolding(): Promise<NeonRecomputeResponse> {
+    const response = await fetch(this.url("holdings/neon/recompute"), { method: "POST" });
+    return handleResponse<NeonRecomputeResponse>(response);
   }
 
   async updateHolding(holdingId: number, value_chf: number): Promise<HoldingUpdateResponse> {

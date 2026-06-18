@@ -5,7 +5,6 @@ import io
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,21 +49,6 @@ def parse_neon_csv(content: str | bytes) -> list[dict]:
         rows.append({"date": date_str, "amount": amount})
 
     return rows
-
-
-def derive_balance(
-    rows: list[dict],
-    anchor_date: Optional[str] = None,
-    anchor_amount: Optional[float] = None,
-) -> float:
-    if anchor_date is None or anchor_amount is None:
-        if not rows:
-            return 0.0
-        return sum(r["amount"] for r in rows)
-
-    filtered = [r for r in rows if r.get("date", "") >= anchor_date]
-    delta = sum(r["amount"] for r in filtered)
-    return anchor_amount + delta
 
 
 def get_archive_dir(project_root: Path) -> Path:

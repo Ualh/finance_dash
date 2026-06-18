@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,12 +79,21 @@ class SQLiteRepository:
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS neon_uploads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_hash TEXT NOT NULL UNIQUE,
+                filename TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS neon_transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
                 amount REAL NOT NULL,
-                created_at TEXT NOT NULL
+                upload_id INTEGER NOT NULL REFERENCES neon_uploads(id)
             );
+
+            CREATE INDEX IF NOT EXISTS idx_neon_transactions_date ON neon_transactions(date);
         """)
         self._connection.commit()
 
@@ -239,6 +249,54 @@ class SQLiteRepository:
         self._connection.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
         self._connection.commit()
 
+    def compute_file_hash(self, content: bytes) -> str:
+        return hashlib.sha256(content).hexdigest()
+
+    def is_upload_imported(self, file_hash: str) -> bool:
+        row = self._connection.execute(
+            "SELECT id FROM neon_uploads WHERE file_hash = ?", (file_hash,)
+        ).fetchone()
+        return row is not None
+
+    def import_neon_transactions(self, content: bytes, filename: str, rows: list[dict]) -> int:
+        file_hash = self.compute_file_hash(content)
+        if self.is_upload_imported(file_hash):
+            return 0
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cursor = self._connection.cursor()
+        cursor.execute(
+            "INSERT INTO neon_uploads (file_hash, filename, uploaded_at) VALUES (?, ?, ?)",
+            (file_hash, filename, now),
+        )
+        upload_id = cursor.lastrowid
+
+        cursor.executemany(
+            "INSERT INTO neon_transactions (date, amount, upload_id) VALUES (?, ?, ?)",
+            [(r["date"], r["amount"], upload_id) for r in rows],
+        )
+        self._connection.commit()
+        return len(rows)
+
+    def recompute_neon_balance(self, anchor_date: Optional[str], anchor_amount: Optional[float]) -> float:
+        if anchor_date is None or anchor_amount is None:
+            row = self._connection.execute(
+                "SELECT COALESCE(SUM(amount), 0.0) as total FROM neon_transactions"
+            ).fetchone()
+            return row["total"]
+
+        row = self._connection.execute(
+            "SELECT COALESCE(SUM(amount), 0.0) as total FROM neon_transactions WHERE date >= ?",
+            (anchor_date,),
+        ).fetchone()
+        return anchor_amount + row["total"]
+
+    def get_neon_transaction_count(self) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) as cnt FROM neon_transactions"
+        ).fetchone()
+        return row["cnt"]
+
     def get_cached_fx_rate(self, base: str, quote: str, valuation_date: str) -> Optional[float]:
         row = self._connection.execute(
             "SELECT rate FROM fx_rates WHERE base = ? AND quote = ? AND valuation_date = ? ORDER BY id DESC LIMIT 1",
@@ -260,21 +318,3 @@ class SQLiteRepository:
         )
         self._connection.commit()
 
-    def replace_neon_transactions_in_date_range(self, min_date: str, max_date: str, rows: list[dict]) -> None:
-        cursor = self._connection.cursor()
-        cursor.execute(
-            "DELETE FROM neon_transactions WHERE date >= ? AND date <= ?",
-            (min_date, max_date),
-        )
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        cursor.executemany(
-            "INSERT INTO neon_transactions (date, amount, created_at) VALUES (?, ?, ?)",
-            [(r["date"], r["amount"], now) for r in rows],
-        )
-        self._connection.commit()
-
-    def get_all_neon_transactions(self) -> list[dict]:
-        rows = self._connection.execute(
-            "SELECT date, amount FROM neon_transactions ORDER BY date"
-        ).fetchall()
-        return [dict(r) for r in rows]
