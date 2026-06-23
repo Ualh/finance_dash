@@ -1,4 +1,4 @@
-import type { DashboardResponse, HoldingResponse, HoldingUpdateResponse, HoldingsListResponse, NeonRecomputeResponse, NeonUploadResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
+import type { AddHoldingInput, AddHoldingResponse, DashboardResponse, HoldingResponse, HoldingUpdateResponse, HoldingsListResponse, NeonRecomputeResponse, NeonUploadResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
 
 function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -66,6 +66,15 @@ export class ApiClient {
       body: JSON.stringify({ value }),
     });
     return handleResponse<SettingResponse>(response);
+  }
+
+  async addHolding(input: AddHoldingInput): Promise<AddHoldingResponse> {
+    const response = await fetch(this.url("holdings"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    return handleResponse<AddHoldingResponse>(response);
   }
 
   async listHoldings(): Promise<HoldingsListResponse> {

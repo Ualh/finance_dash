@@ -3,12 +3,26 @@ import { useNavigate } from "react-router-dom";
 import { useApiClient } from "@/hooks/useApiClient";
 import { Button } from "@/components/ui/Button";
 
+const ASSET_CLASSES: Array<{ value: string; label: string }> = [
+  { value: "cash", label: "Cash — available" },
+  { value: "stock", label: "Stocks — invested" },
+  { value: "etf", label: "ETF / fund — invested" },
+  { value: "crypto", label: "Crypto — invested" },
+  { value: "pension", label: "Pension (2nd / 3rd pillar) — locked" },
+  { value: "real_estate", label: "Real estate — locked" },
+  { value: "other", label: "Other — locked" },
+];
+
+const CURRENCIES = ["CHF", "USD", "EUR", "GBP"];
+
 const UpdatePage: React.FC = () => {
   const api = useApiClient();
   const navigate = useNavigate();
 
-  const [value, setValue] = useState("");
-  const [label, setLabel] = useState("");
+  const [hLabel, setHLabel] = useState("");
+  const [hAssetClass, setHAssetClass] = useState("cash");
+  const [hAmount, setHAmount] = useState("");
+  const [hCurrency, setHCurrency] = useState("CHF");
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,18 +36,34 @@ const UpdatePage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const num = parseFloat(value);
+    const num = parseFloat(hAmount);
+    if (!hLabel.trim()) {
+      setStatus({ ok: false, msg: "Please enter a name for the holding." });
+      return;
+    }
     if (isNaN(num)) {
-      setStatus({ ok: false, msg: "Please enter a valid number." });
+      setStatus({ ok: false, msg: "Please enter a valid amount." });
       return;
     }
     setSubmitting(true);
     setStatus(null);
     try {
-      await api.updateFinpension(num, label || undefined);
-      setStatus({ ok: true, msg: "Finpension holding updated." });
-      setValue("");
-      setLabel("");
+      const res = await api.addHolding({
+        label: hLabel.trim(),
+        asset_class: hAssetClass,
+        amount: num,
+        currency: hCurrency,
+      });
+      const chf = res.holding.value_chf.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fxNote =
+        hCurrency !== "CHF"
+          ? ` (${hCurrency} → CHF @ ${res.fx.rate}${res.fx.stale ? ", stale rate" : ""})`
+          : "";
+      setStatus({ ok: true, msg: `Saved "${hLabel.trim()}" — CHF ${chf}${fxNote}.` });
+      setHLabel("");
+      setHAmount("");
+      setHCurrency("CHF");
+      setHAssetClass("cash");
     } catch (err) {
       setStatus({ ok: false, msg: (err as Error).message });
     } finally {
@@ -91,35 +121,73 @@ const UpdatePage: React.FC = () => {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Update Finpension</h2>
+        <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Add / update a holding</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Pillar 2/3a, UBS, IBKR, hard wallet, etc. Enter the amount in its own currency — it's converted to CHF.
+          Re-using the same name updates that holding.
+        </p>
         <form onSubmit={handleSubmit} className="mt-4 max-w-md space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Value (CHF)
+              Name
             </label>
             <input
               type="text"
-              inputMode="decimal"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="e.g. 123456"
+              value={hLabel}
+              onChange={(e) => setHLabel(e.target.value)}
+              placeholder="e.g. UBS Equity Fund, Pillar 3a (Frankly)"
               className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Label (optional)
+              Category
             </label>
-            <input
-              type="text"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Pillar 3a"
-              className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500"
-            />
+            <select
+              value={hAssetClass}
+              onChange={(e) => setHAssetClass(e.target.value)}
+              className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              {ASSET_CLASSES.map((ac) => (
+                <option key={ac.value} value={ac.value}>
+                  {ac.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Amount
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={hAmount}
+                onChange={(e) => setHAmount(e.target.value)}
+                placeholder="e.g. 12000"
+                className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500"
+              />
+            </div>
+            <div className="w-28">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Currency
+              </label>
+              <select
+                value={hCurrency}
+                onChange={(e) => setHCurrency(e.target.value)}
+                className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <Button type="submit" disabled={submitting}>
-            {submitting ? "Saving..." : "Save"}
+            {submitting ? "Saving..." : "Save holding"}
           </Button>
           {status && (
             <p className={`text-sm ${status.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>

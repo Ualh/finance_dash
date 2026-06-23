@@ -53,8 +53,32 @@ export interface HoldingsListResponse {
     asset_class: string;
     value_chf: number;
     label: string | null;
+    native_amount: number | null;
+    native_currency: string | null;
     last_updated: string;
   }>;
+}
+
+export interface AddHoldingInput {
+  label: string;
+  asset_class: string;
+  amount: number;
+  currency: string;
+}
+
+export interface AddHoldingResponse {
+  holding: {
+    id: number;
+    source: string;
+    source_type: string;
+    asset_class: string;
+    value_chf: number;
+    label: string | null;
+    native_amount: number | null;
+    native_currency: string | null;
+    last_updated: string;
+  };
+  fx: { rate: number; stale: boolean; currency: string };
 }
 
 export interface NeonRecomputeResponse {

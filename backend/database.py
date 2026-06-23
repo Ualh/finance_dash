@@ -39,6 +39,8 @@ class SQLiteRepository:
                 asset_class TEXT NOT NULL,
                 value_chf REAL NOT NULL,
                 label TEXT,
+                native_amount REAL,
+                native_currency TEXT,
                 last_updated TEXT NOT NULL,
                 UNIQUE(source, source_type, label)
             );
@@ -95,19 +97,33 @@ class SQLiteRepository:
 
             CREATE INDEX IF NOT EXISTS idx_neon_transactions_date ON neon_transactions(date);
         """)
+        self._migrate_holdings_native_columns(cursor)
         self._connection.commit()
 
-    def upsert_holding(self, source: str, source_type: str, asset_class: str, value_chf: float, label: Optional[str] = None) -> dict:
+    def _migrate_holdings_native_columns(self, cursor: sqlite3.Cursor) -> None:
+        """Add native_amount/native_currency to pre-existing holdings tables (SQLite has no ADD COLUMN IF NOT EXISTS)."""
+        existing = {row["name"] for row in cursor.execute("PRAGMA table_info(holdings)").fetchall()}
+        if "native_amount" not in existing:
+            cursor.execute("ALTER TABLE holdings ADD COLUMN native_amount REAL")
+        if "native_currency" not in existing:
+            cursor.execute("ALTER TABLE holdings ADD COLUMN native_currency TEXT")
+
+    def upsert_holding(self, source: str, source_type: str, asset_class: str, value_chf: float,
+                       label: Optional[str] = None, native_amount: Optional[float] = None,
+                       native_currency: Optional[str] = None) -> dict:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         label = label or ""
         cursor = self._connection.cursor()
         cursor.execute("""
-            INSERT INTO holdings (source, source_type, asset_class, value_chf, label, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO holdings (source, source_type, asset_class, value_chf, label, native_amount, native_currency, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source, source_type, label) DO UPDATE SET
+                asset_class = excluded.asset_class,
                 value_chf = excluded.value_chf,
+                native_amount = excluded.native_amount,
+                native_currency = excluded.native_currency,
                 last_updated = excluded.last_updated
-        """, (source, source_type, asset_class, value_chf, label, now))
+        """, (source, source_type, asset_class, value_chf, label, native_amount, native_currency, now))
         self._connection.commit()
         row = cursor.execute(
             "SELECT * FROM holdings WHERE source = ? AND source_type = ? AND label = ?",

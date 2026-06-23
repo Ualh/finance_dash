@@ -1,3 +1,3 @@
-from .service import FrankfurterClient, convert, get_fx_rate
+from .service import FrankfurterClient, convert, convert_to_chf, get_fx_rate
 
-__all__ = ["FrankfurterClient", "convert", "get_fx_rate"]
+__all__ = ["FrankfurterClient", "convert", "convert_to_chf", "get_fx_rate"]

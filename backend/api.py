@@ -15,8 +15,9 @@ from pydantic import BaseModel
 
 from .config import load_config
 from .csv_source.neon import archive_csv, parse_neon_csv
-from .database import SQLiteRepository
+from .database import LIQUIDITY_BUCKET, SQLiteRepository
 from .fx import convert as fx_convert
+from .fx import convert_to_chf
 from .sync.engine import run_sync_all
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,17 @@ class SettingInput(BaseModel):
 
 class HoldingUpdateInput(BaseModel):
     value_chf: float
+
+
+class ManualHoldingInput(BaseModel):
+    label: str
+    asset_class: str
+    amount: float
+    currency: str = "CHF"
+
+
+def _slugify(text: str) -> str:
+    return "_".join(text.lower().split())
 
 
 @app.get("/dashboard")
@@ -211,11 +223,7 @@ def put_setting(key: str, body: SettingInput, repo: Annotated[SQLiteRepository, 
     repo.set_setting(key, body.value)
 
     if key in ("neon_anchor_date", "neon_anchor_amount"):
-        anchor_date = repo.get_setting("neon_anchor_date")
-        anchor_amount_str = repo.get_setting("neon_anchor_amount")
-        anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
-        all_transactions = repo.get_all_neon_transactions()
-        balance = compute_balance_from_ledger(all_transactions, anchor_date, anchor_amount)
+        balance = repo.recompute_neon_balance(*_load_neon_anchor(repo))
         repo.upsert_holding(
             source="neon",
             source_type="csv",
@@ -225,6 +233,27 @@ def put_setting(key: str, body: SettingInput, repo: Annotated[SQLiteRepository, 
         )
 
     return {"key": key, "value": body.value}
+
+
+@app.post("/holdings")
+def add_manual_holding(body: ManualHoldingInput, repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
+    label = body.label.strip()
+    if not label:
+        raise HTTPException(400, "Label is required")
+    if body.asset_class not in LIQUIDITY_BUCKET:
+        raise HTTPException(400, f"Unknown asset_class '{body.asset_class}'")
+
+    conv = convert_to_chf(repo, body.amount, body.currency)
+    holding = repo.upsert_holding(
+        source=_slugify(label),
+        source_type="manual",
+        asset_class=body.asset_class,
+        value_chf=conv["amount_chf"],
+        label=label,
+        native_amount=body.amount,
+        native_currency=conv["currency"],
+    )
+    return {"holding": holding, "fx": {"rate": conv["rate"], "stale": conv["stale"], "currency": conv["currency"]}}
 
 
 @app.get("/holdings")
