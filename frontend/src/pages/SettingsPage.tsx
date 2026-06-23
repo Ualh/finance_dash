@@ -154,31 +154,6 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleAnchorSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const num = parseFloat(anchorAmount);
-    if (!anchorDate || isNaN(num)) {
-      setAnchorStatus({ ok: false, msg: "Please enter a valid date and amount." });
-      return;
-    }
-    if (!window.confirm("Changing the anchor will recompute your entire Neon balance. Are you sure?")) {
-      return;
-    }
-    setAnchorSubmitting(true);
-    setAnchorStatus(null);
-    try {
-      await api.setSetting("neon_anchor_date", anchorDate);
-      await api.setSetting("neon_anchor_amount", anchorAmount);
-      setAnchorPrevDate(anchorDate);
-      setAnchorPrevAmount(anchorAmount);
-      setAnchorStatus({ ok: true, msg: "Anchor balance saved — Neon holding recomputed." });
-    } catch (err) {
-      setAnchorStatus({ ok: false, msg: (err as Error).message });
-    } finally {
-      setAnchorSubmitting(false);
-    }
-  };
-
   const manualHoldings = holdings.filter((h) => h.source_type === "manual");
 
   return (
