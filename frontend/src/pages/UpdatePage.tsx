@@ -105,9 +105,17 @@ const UpdatePage: React.FC = () => {
 
     try {
       const res = await api.uploadNeonCsv(file);
+      const chf = res.balance.toLocaleString("de-CH", { minimumFractionDigits: 2 });
+      if (res.transactions_parsed === 0) {
+        setCsvStatus({
+          ok: true,
+          msg: `This file was already imported — nothing to add. Balance unchanged at CHF ${chf}.`,
+        });
+        return;
+      }
       setCsvStatus({
         ok: true,
-        msg: `Neon CSV uploaded: ${res.transactions_parsed} transaction(s) parsed, balance = CHF ${res.balance.toLocaleString("de-CH", { minimumFractionDigits: 2 })}.`,
+        msg: `Neon CSV uploaded: ${res.transactions_parsed} new transaction(s), balance = CHF ${chf}.`,
       });
       setTimeout(() => navigate("/"), 2000);
     } catch (err) {
@@ -247,7 +255,9 @@ const UpdatePage: React.FC = () => {
           <label className="flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500 hover:border-brand-400 hover:text-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-brand-500">
             <input
               type="file"
-              accept=".csv"
+              // Broad accept list: mobile file pickers grey out CSVs when the
+              // filter is just ".csv", since the device MIME type often differs.
+              accept=".csv,text/csv,text/comma-separated-values,application/csv,application/vnd.ms-excel"
               onChange={handleCsvUpload}
               disabled={csvSubmitting}
               className="sr-only"
