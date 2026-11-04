@@ -32,6 +32,12 @@ def client(monkeypatch):
             yield c
 
 
+@pytest.fixture
+def binance_keys(monkeypatch):
+    monkeypatch.setenv("BINANCE_API_KEY", "test_key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "test_secret")
+
+
 def _make_repo(db_path):
     from backend.database import SQLiteRepository
 
@@ -44,227 +50,155 @@ def seed_holding(repo, source, source_type, asset_class, value_chf, label=None):
     repo.upsert_holding(source, source_type, asset_class, value_chf, label)
 
 
-def mock_binance_account_response(balances: list[dict]) -> dict:
-    return {"canTrade": True, "balances": balances}
+BTC_USDT = 60_000.0
+USD_CHF = 0.90
+
+# Shape of GET /sapi/v1/asset/wallet/balance (quoteAsset=BTC), per the official docs.
+WALLETS = [
+    {"activate": True, "balance": "0.01", "walletName": "Spot"},
+    {"activate": True, "balance": "0.02", "walletName": "Funding"},
+    {"activate": True, "balance": "0.05", "walletName": "Earn"},
+    {"activate": True, "balance": "0", "walletName": "Cross Margin"},
+]
 
 
-def mock_binance_ticker_price(symbol: str, price: float) -> dict:
-    return {"symbol": symbol, "price": str(price)}
+def fake_signed(wallets):
+    def _fake(endpoint, params=None, base_url="https://api.binance.com"):
+        if endpoint == "/sapi/v1/asset/wallet/balance":
+            assert params == {"quoteAsset": "BTC"}
+            return wallets
+        raise AssertionError(f"Unexpected signed endpoint: {endpoint}")
+    return _fake
 
 
-MOCK_ACCOUNT = mock_binance_account_response([
-    {"asset": "BTC", "free": "0.5", "locked": "0.0"},
-    {"asset": "ETH", "free": "10.0", "locked": "0.0"},
-    {"asset": "USDT", "free": "2000.0", "locked": "0.0"},
-    {"asset": "ADA", "free": "5000.0", "locked": "0.0"},
-    {"asset": "SOL", "free": "0.0", "locked": "0.0"},
-])
+def fake_public(endpoint, params=None, base_url="https://api.binance.com"):
+    assert endpoint == "/api/v3/ticker/price" and params == {"symbol": "BTCUSDT"}
+    return {"symbol": "BTCUSDT", "price": str(BTC_USDT)}
+
+
+class MockFXClient:
+    def fetch_rate(self, base, quote, valuation_date):
+        return USD_CHF
+
+
+def chf(btc: float) -> float:
+    return round(btc * BTC_USDT * USD_CHF, 2)
 
 
 class TestBinanceAdapter:
 
-    def test_sync_binance_creates_holdings(self, repo):
-        btc_price = 60_000.0
-        eth_price = 3_000.0
-        ada_price = 0.35
-        usd_to_chf = 0.90
-
-        def fake_signed_request(endpoint, params=None, base_url="https://api.binance.com"):
-            if endpoint == "/api/v3/account":
-                return MOCK_ACCOUNT
-            if endpoint == "/api/v3/ticker/price":
-                sym = (params or {}).get("symbol", "")
-                prices = {
-                    "BTCUSDT": btc_price,
-                    "ETHUSDT": eth_price,
-                    "ADAUSDT": ada_price,
-                }
-                p = prices.get(sym)
-                if p is not None:
-                    return {"symbol": sym, "price": str(p)}
-                raise Exception(f"Unknown symbol: {sym}")
-            raise Exception(f"Unexpected endpoint: {endpoint}")
-
-        class MockFXClient:
-            def fetch_rate(self, base, quote, valuation_date):
-                return usd_to_chf
-
+    def test_reads_spot_funding_and_earn_wallets(self, repo, binance_keys):
         with (
-            patch("backend.sources.binance.BINANCE_API_KEY", "test_key"),
-            patch("backend.sources.binance.BINANCE_API_SECRET", "test_secret"),
-            patch("backend.sources.binance._signed_request", side_effect=fake_signed_request),
+            patch("backend.sources.binance._signed_request", side_effect=fake_signed(WALLETS)),
+            patch("backend.sources.binance._public_request", side_effect=fake_public),
             freeze_time("2026-06-16 12:00:00"),
         ):
             from backend.sources.binance import sync_binance
 
-            result = sync_binance(repo, fx_client=MockFXClient())
+            assert sync_binance(repo, fx_client=MockFXClient()) == 3
 
-        assert result == 4
+        by_label = {h["label"]: h for h in repo.list_holdings()}
+        assert set(by_label) == {"Binance Spot", "Binance Funding", "Binance Earn"}
+        assert by_label["Binance Spot"]["value_chf"] == chf(0.01)
+        assert by_label["Binance Funding"]["value_chf"] == chf(0.02)
+        assert by_label["Binance Earn"]["value_chf"] == chf(0.05)
+        assert by_label["Binance Earn"]["native_currency"] == "BTC"
+        assert all(h["source"] == "binance" and h["source_type"] == "api" and h["asset_class"] == "crypto"
+                   for h in by_label.values())
 
-        holdings = repo.list_holdings()
-        assert len(holdings) == 4
-
-        holdings_by_label = {h["label"]: h for h in holdings}
-
-        btc_holding = holdings_by_label["Binance BTC"]
-        expected_btc_value = round(0.5 * btc_price * usd_to_chf, 2)
-        assert btc_holding["value_chf"] == expected_btc_value
-        assert btc_holding["source"] == "binance"
-        assert btc_holding["source_type"] == "api"
-        assert btc_holding["asset_class"] == "crypto"
-
-        eth_holding = holdings_by_label["Binance ETH"]
-        expected_eth_value = round(10.0 * eth_price * usd_to_chf, 2)
-        assert eth_holding["value_chf"] == expected_eth_value
-
-        usdt_holding = holdings_by_label["Binance USDT"]
-        expected_usdt_value = round(2000.0 * 1.0 * usd_to_chf, 2)
-        assert usdt_holding["value_chf"] == expected_usdt_value
-
-        ada_holding = holdings_by_label["Binance ADA"]
-        expected_ada_value = round(5000.0 * ada_price * usd_to_chf, 2)
-        assert ada_holding["value_chf"] == expected_ada_value
-
-    def test_sync_binance_upserts_existing_holdings(self, repo):
+    def test_replaces_previous_lines_instead_of_keeping_stale_ones(self, repo, binance_keys):
+        # Legacy per-asset line from the old Spot-only adapter, and a wallet since emptied.
         seed_holding(repo, "binance", "api", "crypto", 1000.0, "Binance BTC")
-
-        def fake_signed_request(endpoint, params=None, base_url="https://api.binance.com"):
-            if endpoint == "/api/v3/account":
-                return mock_binance_account_response([
-                    {"asset": "BTC", "free": "0.5", "locked": "0.0"},
-                ])
-            if endpoint == "/api/v3/ticker/price":
-                return {"symbol": "BTCUSDT", "price": "60000"}
-            raise Exception(f"Unexpected endpoint: {endpoint}")
-
-        class MockFXClient:
-            def fetch_rate(self, base, quote, valuation_date):
-                return 0.90
+        seed_holding(repo, "binance", "api", "crypto", 500.0, "Binance Funding")
+        seed_holding(repo, "finpension", "manual", "pension", 50_000.0)
 
         with (
-            patch("backend.sources.binance.BINANCE_API_KEY", "test_key"),
-            patch("backend.sources.binance.BINANCE_API_SECRET", "test_secret"),
-            patch("backend.sources.binance._signed_request", side_effect=fake_signed_request),
+            patch("backend.sources.binance._signed_request", side_effect=fake_signed(WALLETS[:1])),
+            patch("backend.sources.binance._public_request", side_effect=fake_public),
             freeze_time("2026-06-16 12:00:00"),
         ):
             from backend.sources.binance import sync_binance
 
             sync_binance(repo, fx_client=MockFXClient())
 
-        holdings = repo.list_holdings()
-        assert len(holdings) == 1
-        assert holdings[0]["value_chf"] == round(0.5 * 60000 * 0.90, 2)
+        labels = sorted(h["label"] for h in repo.list_holdings())
+        assert labels == ["", "Binance Spot"]  # finpension untouched, Binance replaced
 
-    def test_sync_binance_no_balances(self, repo):
-        def fake_signed_request(endpoint, params=None, base_url="https://api.binance.com"):
-            if endpoint == "/api/v3/account":
-                return mock_binance_account_response([])
-            raise Exception(f"Unexpected endpoint: {endpoint}")
-
-        with (
-            patch("backend.sources.binance.BINANCE_API_KEY", "test_key"),
-            patch("backend.sources.binance.BINANCE_API_SECRET", "test_secret"),
-            patch("backend.sources.binance._signed_request", side_effect=fake_signed_request),
-        ):
+    def test_no_balances_clears_binance(self, repo, binance_keys):
+        seed_holding(repo, "binance", "api", "crypto", 1000.0, "Binance Spot")
+        with patch("backend.sources.binance._signed_request", side_effect=fake_signed([])):
             from backend.sources.binance import sync_binance
 
-            result = sync_binance(repo)
-
-        assert result == 0
+            assert sync_binance(repo) == 0
         assert repo.list_holdings() == []
 
-    def test_sync_binance_handles_price_failure_gracefully(self, repo):
-        def fake_signed_request(endpoint, params=None, base_url="https://api.binance.com"):
-            if endpoint == "/api/v3/account":
-                return mock_binance_account_response([
-                    {"asset": "BTC", "free": "0.5", "locked": "0.0"},
-                    {"asset": "UNKNOWN_ASSET", "free": "100.0", "locked": "0.0"},
-                ])
-            if endpoint == "/api/v3/ticker/price":
-                sym = (params or {}).get("symbol", "")
-                if sym == "BTCUSDT":
-                    return {"symbol": "BTCUSDT", "price": "60000"}
-                raise Exception(f"Unknown symbol: {sym}")
-            raise Exception(f"Unexpected endpoint: {endpoint}")
+    def test_signature_covers_the_exact_query_sent(self, binance_keys):
+        import hashlib
+        import hmac
 
-        class MockFXClient:
-            def fetch_rate(self, base, quote, valuation_date):
-                return 0.90
+        captured = {}
 
-        with (
-            patch("backend.sources.binance.BINANCE_API_KEY", "test_key"),
-            patch("backend.sources.binance.BINANCE_API_SECRET", "test_secret"),
-            patch("backend.sources.binance._signed_request", side_effect=fake_signed_request),
-            freeze_time("2026-06-16 12:00:00"),
-        ):
-            from backend.sources.binance import sync_binance
+        class Resp:
+            def raise_for_status(self):
+                pass
 
-            result = sync_binance(repo, fx_client=MockFXClient())
+            def json(self):
+                return []
 
-        assert result == 1
-        holdings = repo.list_holdings()
-        assert len(holdings) == 1
-        assert holdings[0]["label"] == "Binance BTC"
+        def fake_get(url, headers=None, timeout=None, **kwargs):
+            captured["url"], captured["headers"] = url, headers
+            return Resp()
 
-    def test_sync_binance_integrated_via_sync_all(self, client):
+        with patch("backend.sources.binance.requests.get", side_effect=fake_get), freeze_time("2026-06-16 12:00:00"):
+            from backend.sources.binance import _signed_request
+
+            _signed_request("/sapi/v1/asset/wallet/balance", {"quoteAsset": "BTC"})
+
+        query, signature = captured["url"].split("?", 1)[1].rsplit("&signature=", 1)
+        assert query == "quoteAsset=BTC&timestamp=1781611200000"
+        assert signature == hmac.new(b"test_secret", query.encode(), hashlib.sha256).hexdigest()
+        assert captured["headers"] == {"X-MBX-APIKEY": "test_key"}
+
+
+class TestBinanceSyncAll:
+
+    def test_first_sync_on_empty_database_calls_binance(self, client, binance_keys):
+        """Regression: sync only ran sources that already had a holdings row, so Binance never started."""
         repo = app.state.repository
-        seed_holding(repo, "binance", "api", "crypto", 1000.0, "Binance BTC")
-
-        def fake_signed_request(endpoint, params=None, base_url="https://api.binance.com"):
-            if endpoint == "/api/v3/account":
-                return mock_binance_account_response([
-                    {"asset": "BTC", "free": "0.5", "locked": "0.0"},
-                ])
-            if endpoint == "/api/v3/ticker/price":
-                return {"symbol": "BTCUSDT", "price": "60000"}
-            raise Exception(f"Unexpected endpoint: {endpoint}")
-
-        class MockFXClient:
-            def fetch_rate(self, base, quote, valuation_date):
-                return 0.90
+        assert repo.list_holdings() == []
 
         with (
-            patch("backend.sources.binance.BINANCE_API_KEY", "test_key"),
-            patch("backend.sources.binance.BINANCE_API_SECRET", "test_secret"),
-            patch("backend.sources.binance._signed_request", side_effect=fake_signed_request),
+            patch("backend.sources.binance._signed_request", side_effect=fake_signed(WALLETS)),
+            patch("backend.sources.binance._public_request", side_effect=fake_public),
             patch("backend.fx.service.FrankfurterClient", return_value=MockFXClient()),
             freeze_time("2026-06-16 12:00:00"),
         ):
             resp = client.post("/sync/all")
 
         assert resp.status_code == 200
-        data = resp.json()
-        assert "binance" in data["ok"]
-        assert data["error"] == []
+        assert resp.json() == {"ok": ["binance"], "error": []}
+        total = sum(h["value_chf"] for h in repo.list_holdings())
+        assert total == pytest.approx(chf(0.01) + chf(0.02) + chf(0.05))
+        assert repo.get_last_sync_log("binance")["status"] == "ok"
 
-        holdings = repo.list_holdings()
-        assert len(holdings) == 1
-        assert holdings[0]["value_chf"] == round(0.5 * 60000 * 0.90, 2)
-
-    def test_binance_error_does_not_block_other_sources(self, client):
+    def test_without_keys_binance_is_not_synced(self, client):
         repo = app.state.repository
-        seed_holding(repo, "binance", "api", "crypto", 1000.0, "Binance BTC")
-        seed_holding(repo, "finpension", "api", "pension", 50_000.0)
+        seed_holding(repo, "binance", "api", "crypto", 1000.0, "Binance Spot")
+        with patch("backend.sources.binance._signed_request") as signed:
+            resp = client.post("/sync/all")
+        assert resp.json() == {"ok": [], "error": []}
+        signed.assert_not_called()
 
-        def fake_signed_request(endpoint, params=None, base_url="https://api.binance.com"):
+    def test_binance_error_is_logged(self, client, binance_keys):
+        repo = app.state.repository
+
+        def unreachable(endpoint, params=None, base_url="https://api.binance.com"):
             raise Exception("Binance API unreachable")
 
-        with (
-            patch("backend.sources.binance.BINANCE_API_KEY", "test_key"),
-            patch("backend.sources.binance.BINANCE_API_SECRET", "test_secret"),
-            patch("backend.sources.binance._signed_request", side_effect=fake_signed_request),
-            freeze_time("2026-06-16 12:00:00"),
-        ):
+        with patch("backend.sources.binance._signed_request", side_effect=unreachable), freeze_time("2026-06-16 12:00:00"):
             resp = client.post("/sync/all")
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "finpension" in data["ok"]
-        assert "binance" in data["error"]
-
-        binance_log = repo.get_last_sync_log("binance")
-        assert binance_log["status"] == "error"
-        assert "Binance API unreachable" in binance_log["message"]
-
-        finpension_log = repo.get_last_sync_log("finpension")
-        assert finpension_log["status"] == "ok"
+        assert resp.json() == {"ok": [], "error": ["binance"]}
+        log = repo.get_last_sync_log("binance")
+        assert log["status"] == "error"
+        assert "Binance API unreachable" in log["message"]

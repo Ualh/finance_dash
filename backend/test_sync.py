@@ -43,8 +43,8 @@ class TestSyncAll:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert set(data["ok"]) == {"finpension", "postfinance"}
-        assert data["error"] == []
+        # Manual sources have nothing to sync; they are still snapshotted.
+        assert data == {"ok": [], "error": []}
 
         rows = repo._connection.execute(
             "SELECT snapshot_date, source, total_chf FROM nw_snapshots ORDER BY source"
@@ -69,25 +69,30 @@ class TestSyncAll:
         ).fetchall()
         assert rows[0]["cnt"] == 2
 
-    def test_error_source_logged_without_blocking_others(self, client):
+    def test_error_source_logged_without_blocking_others(self, client, monkeypatch):
+        from backend.sync import engine
+
+        def broken(repo):
+            raise RuntimeError("API unreachable")
+
+        monkeypatch.setattr(engine, "AUTOMATIC_SOURCES", [
+            engine.AutomaticSource("alpha", lambda: True, broken),
+            engine.AutomaticSource("beta", lambda: True, lambda repo: None),
+            engine.AutomaticSource("gamma", lambda: False, broken),
+        ])
         repo = app.state.repository
-        seed_holding(repo, "finpension", "api", "pension", 100_000)
-        seed_holding(repo, "swissquote", "api", "etf", 50_000)
 
         with freeze_time("2026-06-16 08:00:00"):
             resp = client.post("/sync/all")
 
         assert resp.status_code == 200
-        data = resp.json()
-        assert "finpension" in data["ok"]
-        assert "swissquote" in data["ok"]
+        assert resp.json() == {"ok": ["beta"], "error": ["alpha"]}
 
         log = repo._connection.execute(
-            "SELECT source, status FROM sync_log ORDER BY source"
+            "SELECT source, status, message FROM sync_log ORDER BY source"
         ).fetchall()
-        statuses = {r["source"]: r["status"] for r in log}
-        assert statuses.get("finpension") == "ok"
-        assert statuses.get("swissquote") == "ok"
+        statuses = {r["source"]: (r["status"], r["message"]) for r in log}
+        assert statuses == {"alpha": ("error", "API unreachable"), "beta": ("ok", "sync completed")}
 
     def test_sync_writes_snapshot_for_manual_sources(self, client):
         repo = app.state.repository
@@ -104,25 +109,37 @@ class TestSyncAll:
         assert sources["finpension"] == 80_000.0
         assert sources["csv_upload"] == 20_000.0
 
-    def test_dashboard_delta_j1_works_across_days(self, client):
+    def test_dashboard_change_since_last_month(self, client):
         repo = app.state.repository
-        seed_holding(repo, "finpension", "api", "pension", 100_000)
+        seed_holding(repo, "finpension", "manual", "pension", 90_000)
+        with freeze_time("2026-05-20 08:00:00"):
+            client.post("/sync/all")
 
-        with freeze_time("2026-06-15 08:00:00"):
-            resp1 = client.post("/sync/all")
-        assert resp1.status_code == 200
+        seed_holding(repo, "finpension", "manual", "pension", 100_000)
+        with freeze_time("2026-05-31 08:00:00"):
+            client.post("/sync/all")
 
         with freeze_time("2026-06-16 08:00:00"):
-            seed_holding(repo, "finpension", "api", "pension", 120_000)
-            resp2 = client.post("/sync/all")
-        assert resp2.status_code == 200
+            seed_holding(repo, "finpension", "manual", "pension", 120_000)
+            client.post("/sync/all")
+            d = client.get("/dashboard").json()
 
-        with freeze_time("2026-06-16 08:05:00"):
-            dash = client.get("/dashboard")
-        assert dash.status_code == 200
-        d = dash.json()
-        assert d["delta_chf"] == 20_000.0
         assert d["total_chf"] == 120_000.0
+        # Compared with the last snapshot of May, not with yesterday.
+        assert d["change_since_last_month"] == {"amount_chf": 20_000.0, "since": "2026-05-31", "pct": 20.0}
+        assert d["history"] == [
+            {"month": "2026-05", "date": "2026-05-31", "total_chf": 100_000.0},
+            {"month": "2026-06", "date": "2026-06-16", "total_chf": 120_000.0},
+        ]
+
+    def test_dashboard_change_is_null_without_a_previous_month(self, client):
+        repo = app.state.repository
+        seed_holding(repo, "finpension", "manual", "pension", 100_000)
+        with freeze_time("2026-06-16 08:00:00"):
+            client.post("/sync/all")
+            d = client.get("/dashboard").json()
+        assert d["change_since_last_month"] is None
+        assert [p["month"] for p in d["history"]] == ["2026-06"]
 
 
 class TestDashboard:

@@ -1,128 +1,57 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Callable
 
 from backend.database import SQLiteRepository
+from backend.snapshots import record_snapshot
+from backend.sources import binance, ibkr, wise
 
 logger = logging.getLogger(__name__)
 
 
-class SourceSync(Protocol):
+@dataclass(frozen=True)
+class AutomaticSource:
+    """A source the daily sync can refresh on its own, given credentials in the environment."""
+
     name: str
-
-    def sync(self, repo: SQLiteRepository) -> None: ...
-
-
-class FinpensionSync:
-    name = "finpension"
-
-    def sync(self, repo: SQLiteRepository) -> None:
-        pass
+    is_configured: Callable[[], bool]
+    sync: Callable[[SQLiteRepository], object]
 
 
-class CSVUploadSync:
-    name = "csv_upload"
-
-    def sync(self, repo: SQLiteRepository) -> None:
-        pass
-
-
-class PostFinanceSync:
-    name = "postfinance"
-
-    def sync(self, repo: SQLiteRepository) -> None:
-        pass
-
-
-class CoinRKingSync:
-    name = "coinranking"
-
-    def sync(self, repo: SQLiteRepository) -> None:
-        pass
-
-
-class SwissquoteSync:
-    name = "swissquote"
-
-    def sync(self, repo: SQLiteRepository) -> None:
-        pass
-
-
-class VIACSync:
-    name = "viac"
-
-    def sync(self, repo: SQLiteRepository) -> None:
-        pass
-
-
-class BinanceSync:
-    name = "binance"
-
-    def sync(self, repo: SQLiteRepository) -> None:
-        from backend.sources.binance import sync_binance
-        sync_binance(repo)
-
-
-SYNC_SOURCES: list[SourceSync] = [
-    FinpensionSync(),
-    CSVUploadSync(),
-    PostFinanceSync(),
-    CoinRKingSync(),
-    SwissquoteSync(),
-    VIACSync(),
-    BinanceSync(),
+AUTOMATIC_SOURCES: list[AutomaticSource] = [
+    AutomaticSource("binance", binance.is_configured, lambda repo: binance.sync_binance(repo)),
+    AutomaticSource("wise", wise.is_configured, lambda repo: wise.sync_wise(repo)),
+    AutomaticSource("ibkr", ibkr.is_configured, lambda repo: ibkr.sync_ibkr(repo)),
 ]
 
-MANUAL_SOURCES = {"finpension", "csv_upload"}
 
+def get_syncable_sources() -> list[AutomaticSource]:
+    """Every automatic source whose credentials are set, whether or not it has holdings yet.
 
-def get_syncable_sources(repo: SQLiteRepository) -> list[SourceSync]:
-    configured = set(repo.list_sources())
-    return [s for s in SYNC_SOURCES if s.name in configured]
+    Selecting by existing holdings meant a fresh source (no row yet) was never synced,
+    so it could never get its first row.
+    """
+    return [s for s in AUTOMATIC_SOURCES if s.is_configured()]
 
 
 def run_sync_all(repo: SQLiteRepository) -> dict[str, list[str]]:
     ok_sources: list[str] = []
     error_sources: list[str] = []
 
-    sources = get_syncable_sources(repo)
-
-    for source_module in sources:
+    for source in get_syncable_sources():
         started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        repo.log_sync_start(source_module.name, started_at)
+        repo.log_sync_start(source.name, started_at)
         try:
-            source_module.sync(repo)
-            repo.log_sync_end(source_module.name, "ok", "sync completed", started_at)
-            ok_sources.append(source_module.name)
+            source.sync(repo)
+            repo.log_sync_end(source.name, "ok", "sync completed", started_at)
+            ok_sources.append(source.name)
         except Exception as exc:
-            logger.exception("sync failed for %s", source_module.name)
-            repo.log_sync_end(source_module.name, "error", str(exc), started_at)
-            error_sources.append(source_module.name)
+            logger.exception("sync failed for %s", source.name)
+            repo.log_sync_end(source.name, "error", str(exc), started_at)
+            error_sources.append(source.name)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    all_sources = repo.list_sources()
-    for src in all_sources:
-        agg = repo.get_source_aggregate(src)
-        repo.upsert_snapshot(
-            snapshot_date=today,
-            source=src,
-            total_chf=agg["total_chf"],
-            available_chf=agg["buckets"]["available"],
-            invested_chf=agg["buckets"]["invested"],
-            locked_chf=agg["buckets"]["locked"],
-        )
-
-    total_agg = repo.get_aggregate_holdings()
-    repo.upsert_snapshot(
-        snapshot_date=today,
-        source="total",
-        total_chf=total_agg["total_chf"],
-        available_chf=total_agg["buckets"]["available"],
-        invested_chf=total_agg["buckets"]["invested"],
-        locked_chf=total_agg["buckets"]["locked"],
-    )
-
+    record_snapshot(repo)
     return {"ok": ok_sources, "error": error_sources}

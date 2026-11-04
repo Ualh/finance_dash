@@ -96,8 +96,31 @@ class SQLiteRepository:
             );
 
             CREATE INDEX IF NOT EXISTS idx_neon_transactions_date ON neon_transactions(date);
+
+            CREATE TABLE IF NOT EXISTS wise_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reference_number TEXT NOT NULL,
+                currency TEXT NOT NULL,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                amount_chf REAL NOT NULL,
+                detail_type TEXT,
+                description TEXT,
+                UNIQUE(reference_number, currency)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_wise_transactions_date ON wise_transactions(date);
+
+            CREATE TABLE IF NOT EXISTS cash_withdrawals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount_chf REAL NOT NULL,
+                note TEXT,
+                created_at TEXT NOT NULL
+            );
         """)
         self._migrate_holdings_native_columns(cursor)
+        self._migrate_neon_transaction_columns(cursor)
         self._connection.commit()
 
     def _migrate_holdings_native_columns(self, cursor: sqlite3.Cursor) -> None:
@@ -107,6 +130,12 @@ class SQLiteRepository:
             cursor.execute("ALTER TABLE holdings ADD COLUMN native_amount REAL")
         if "native_currency" not in existing:
             cursor.execute("ALTER TABLE holdings ADD COLUMN native_currency TEXT")
+
+    def _migrate_neon_transaction_columns(self, cursor: sqlite3.Cursor) -> None:
+        """Keep the Spaces flag so pocket moves inside Neon are not counted as spending."""
+        existing = {row["name"] for row in cursor.execute("PRAGMA table_info(neon_transactions)").fetchall()}
+        if "is_space" not in existing:
+            cursor.execute("ALTER TABLE neon_transactions ADD COLUMN is_space INTEGER NOT NULL DEFAULT 0")
 
     def upsert_holding(self, source: str, source_type: str, asset_class: str, value_chf: float,
                        label: Optional[str] = None, native_amount: Optional[float] = None,
@@ -154,6 +183,31 @@ class SQLiteRepository:
         self._connection.commit()
         row = cursor.execute("SELECT * FROM holdings WHERE id = ?", (holding_id,)).fetchone()
         return dict(row)
+
+    def replace_source_holdings(self, source: str, source_type: str, holdings: list[dict]) -> list[dict]:
+        """Make `holdings` the complete set of lines for an automatic source.
+
+        Lines the source no longer reports (an emptied wallet, a legacy per-asset label)
+        are removed so the total never keeps a stale balance.
+        """
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._connection:
+            self._connection.execute(
+                "DELETE FROM holdings WHERE source = ? AND source_type = ?", (source, source_type)
+            )
+            self._connection.executemany(
+                """INSERT INTO holdings (source, source_type, asset_class, value_chf, label, native_amount, native_currency, last_updated)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (source, source_type, h["asset_class"], h["value_chf"], h.get("label") or "",
+                     h.get("native_amount"), h.get("native_currency"), now)
+                    for h in holdings
+                ],
+            )
+        rows = self._connection.execute(
+            "SELECT * FROM holdings WHERE source = ? AND source_type = ? ORDER BY label", (source, source_type)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def get_aggregate_holdings(self) -> dict:
         cursor = self._connection.cursor()
@@ -288,8 +342,8 @@ class SQLiteRepository:
         upload_id = cursor.lastrowid
 
         cursor.executemany(
-            "INSERT INTO neon_transactions (date, amount, upload_id) VALUES (?, ?, ?)",
-            [(r["date"], r["amount"], upload_id) for r in rows],
+            "INSERT INTO neon_transactions (date, amount, upload_id, is_space) VALUES (?, ?, ?, ?)",
+            [(r["date"], r["amount"], upload_id, 1 if r.get("is_space") else 0) for r in rows],
         )
         self._connection.commit()
         return len(rows)
@@ -312,6 +366,77 @@ class SQLiteRepository:
             "SELECT COUNT(*) as cnt FROM neon_transactions"
         ).fetchone()
         return row["cnt"]
+
+    def get_latest_neon_transaction_date(self) -> Optional[str]:
+        row = self._connection.execute("SELECT MAX(date) AS latest FROM neon_transactions").fetchone()
+        return row["latest"]
+
+    def list_total_snapshots(self) -> list[dict]:
+        rows = self._connection.execute(
+            "SELECT snapshot_date, total_chf FROM nw_snapshots WHERE source = 'total' ORDER BY snapshot_date"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_last_successful_sync(self, source: str) -> Optional[str]:
+        row = self._connection.execute(
+            "SELECT MAX(COALESCE(finished_at, started_at)) AS at FROM sync_log WHERE source = ? AND status = 'ok'",
+            (source,),
+        ).fetchone()
+        return row["at"]
+
+    def import_wise_transactions(self, rows: list[dict]) -> int:
+        """Insert Wise statement lines, skipping any already stored (same reference and currency)."""
+        cursor = self._connection.cursor()
+        cursor.executemany(
+            """INSERT OR IGNORE INTO wise_transactions
+               (reference_number, currency, date, amount, amount_chf, detail_type, description)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (r["reference_number"], r["currency"], r["date"], r["amount"], r["amount_chf"],
+                 r.get("detail_type"), r.get("description"))
+                for r in rows
+            ],
+        )
+        self._connection.commit()
+        return cursor.rowcount
+
+    def list_bank_debits(self, start_date: str, end_date: str, wise_internal_types: frozenset[str]) -> list[dict]:
+        """Money that left Neon or Wise for the outside world, between two dates inclusive."""
+        neon = self._connection.execute(
+            "SELECT 'neon' AS source, date, amount AS amount_chf FROM neon_transactions "
+            "WHERE amount < 0 AND is_space = 0 AND date BETWEEN ? AND ?",
+            (start_date, end_date),
+        ).fetchall()
+        placeholders = ",".join("?" for _ in wise_internal_types) or "''"
+        wise = self._connection.execute(
+            "SELECT 'wise' AS source, date, amount_chf FROM wise_transactions "
+            f"WHERE amount < 0 AND COALESCE(detail_type, '') NOT IN ({placeholders}) AND date BETWEEN ? AND ?",
+            (*sorted(wise_internal_types), start_date, end_date),
+        ).fetchall()
+        return [dict(r) for r in [*neon, *wise]]
+
+    def add_cash_withdrawal(self, date: str, amount_chf: float, note: Optional[str]) -> dict:
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cursor = self._connection.cursor()
+        cursor.execute(
+            "INSERT INTO cash_withdrawals (date, amount_chf, note, created_at) VALUES (?, ?, ?, ?)",
+            (date, amount_chf, note, now),
+        )
+        self._connection.commit()
+        row = cursor.execute("SELECT * FROM cash_withdrawals WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return dict(row)
+
+    def list_cash_withdrawals(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> list[dict]:
+        rows = self._connection.execute(
+            "SELECT * FROM cash_withdrawals WHERE date BETWEEN ? AND ? ORDER BY date DESC, id DESC",
+            (start_date or "0000-00-00", end_date or "9999-12-31"),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_cash_withdrawal(self, withdrawal_id: int) -> bool:
+        cursor = self._connection.execute("DELETE FROM cash_withdrawals WHERE id = ?", (withdrawal_id,))
+        self._connection.commit()
+        return cursor.rowcount > 0
 
     def get_cached_fx_rate(self, base: str, quote: str, valuation_date: str) -> Optional[float]:
         row = self._connection.execute(
