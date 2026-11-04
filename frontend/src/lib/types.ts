@@ -1,14 +1,35 @@
 export interface SourceInfo {
-  total_chf: number;
-  last_updated: string;
+  source: string;
+  label: string;
+  kind: "manual" | "automatic";
+  /** Date the figure is valid for (Neon: latest transaction; automatic: last good sync). */
+  as_of: string | null;
+  age_days: number | null;
+  stale: boolean;
+  action: string;
+  total_chf: number | null;
+  last_updated: string | null;
   last_sync: string | null;
   sync_error: boolean;
+  sync_message: string | null;
 }
 
 export interface FxInfo {
   rate: number;
   stale: boolean;
   currency: string;
+}
+
+export interface MonthPoint {
+  month: string;
+  date: string;
+  total_chf: number;
+}
+
+export interface MonthSpending {
+  month: string;
+  total_chf: number;
+  cash_chf: number;
 }
 
 export interface DashboardResponse {
@@ -18,10 +39,26 @@ export interface DashboardResponse {
     invested: number;
     locked: number;
   };
-  delta_chf: number | null;
-  delta_pct: number | null;
+  change_since_last_month: { amount_chf: number; since: string; pct: number | null } | null;
+  history: MonthPoint[];
+  spending: MonthSpending[];
   sources: Record<string, SourceInfo>;
+  stale_after_days: number;
   _fx?: FxInfo;
+}
+
+export interface CashWithdrawal {
+  id: number;
+  date: string;
+  amount_chf: number;
+  note: string | null;
+  created_at: string;
+}
+
+export interface CashWithdrawalInput {
+  amount_chf: number;
+  date: string;
+  note?: string;
 }
 
 export interface HoldingResponse {

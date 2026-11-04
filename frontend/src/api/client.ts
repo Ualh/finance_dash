@@ -1,4 +1,4 @@
-import type { AddHoldingInput, AddHoldingResponse, DashboardResponse, HoldingResponse, HoldingUpdateResponse, HoldingsListResponse, NeonRecomputeResponse, NeonUploadResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
+import type { AddHoldingInput, AddHoldingResponse, CashWithdrawal, CashWithdrawalInput, DashboardResponse, HoldingResponse, HoldingUpdateResponse, HoldingsListResponse, NeonRecomputeResponse, NeonUploadResponse, SettingResponse, SyncAllResponse } from "@/lib/types";
 
 function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -94,5 +94,24 @@ export class ApiClient {
       body: JSON.stringify({ value_chf }),
     });
     return handleResponse<HoldingUpdateResponse>(response);
+  }
+
+  async addCashWithdrawal(input: CashWithdrawalInput): Promise<{ withdrawal: CashWithdrawal }> {
+    const response = await fetch(this.url("cash-withdrawals"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    return handleResponse<{ withdrawal: CashWithdrawal }>(response);
+  }
+
+  async listCashWithdrawals(): Promise<{ withdrawals: CashWithdrawal[] }> {
+    const response = await fetch(this.url("cash-withdrawals"));
+    return handleResponse<{ withdrawals: CashWithdrawal[] }>(response);
+  }
+
+  async deleteCashWithdrawal(id: number): Promise<{ deleted: number }> {
+    const response = await fetch(this.url(`cash-withdrawals/${id}`), { method: "DELETE" });
+    return handleResponse<{ deleted: number }>(response);
   }
 }
