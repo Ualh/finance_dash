@@ -132,36 +132,52 @@ curl http://127.0.0.1:8000/health
 
 ## Production deployment
 
-The app runs as one process on **port 8001**: FastAPI serves the API and the
-built frontend, as a systemd user service. The units live in
-`deploy/systemd/` and assume the checkout is at `~/Projects/finance_dash` with
-its virtualenv in `.venv`.
+The live app runs on **stella** as one process on **port 8001**: FastAPI serves
+the API and the built frontend. It runs from the checkout at
+`~/Projects/finance_dash` on `main`, with its virtualenv in `.venv`, under the
+systemd user unit `finance-dash.service` (uvicorn on `0.0.0.0:8001`, `.env`
+loaded as an optional `EnvironmentFile`, restarted on failure).
+
+### Deploying a change
 
 ```bash
 cd ~/Projects/finance_dash
-.venv/bin/pip install -r requirements.txt
-(cd frontend && npm ci && npm run build)   # same-origin API calls by default
-
-cp deploy/systemd/finance-dash*.service deploy/systemd/finance-dash*.timer ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now finance-dash.service
-systemctl --user enable --now finance-dash-sync.timer finance-dash-backup.timer
-systemctl --user restart finance-dash.service   # after every rebuild or .env change
+git pull
+(cd frontend && npm ci && npm run build)   # frontend/dist is not committed
+systemctl --user restart finance-dash.service
 ```
 
-| Unit | What it does |
-|------|--------------|
-| `finance-dash.service` | uvicorn on `0.0.0.0:8001`, `.env` loaded as `EnvironmentFile` |
+Run `.venv/bin/pip install -r requirements.txt` before the restart when
+`requirements.txt` changed, and restart after any `.env` change. Leave
+`VITE_API_BASE_URL` unset (or empty) for the build so the page calls the host
+it was loaded from. Check the service with
+`systemctl --user status finance-dash.service` and
+`journalctl --user -u finance-dash.service`.
+
+### First install
+
+```bash
+cp deploy/systemd/finance-dash.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now finance-dash.service
+```
+
+### Daily sync and backup (planned, not installed yet)
+
+`deploy/systemd/` also holds two timers that are **not installed on stella
+yet**, so nothing syncs or backs up on its own today; automatic sources sync
+when you press sync on the dashboard (`POST /sync/all`).
+
+| Unit | What it will do |
+|------|-----------------|
 | `finance-dash-sync.timer` | 06:00 daily (catches up after downtime): `POST /sync/all` syncs Binance, Wise and IBKR and writes the day's snapshot |
 | `finance-dash-backup.timer` | 06:30 daily: `python -m backend.backup`, a consistent SQLite copy in `~/backups/finance_dash/`, last 30 kept |
 
-Check them with `systemctl --user list-timers 'finance-dash*'` and
-`journalctl --user -u finance-dash-sync.service`. Without `loginctl
-enable-linger $USER`, user timers only run while you are logged in.
-
-`frontend/dist` is not committed: rebuild it after each pull. Leave
-`VITE_API_BASE_URL` unset (or empty) for this build so the page calls the host
-it was loaded from.
+To install them later: copy `finance-dash-*.service` and `finance-dash-*.timer`
+to `~/.config/systemd/user/`, run `systemctl --user daemon-reload`, then
+`systemctl --user enable --now finance-dash-sync.timer finance-dash-backup.timer`.
+Without `loginctl enable-linger $USER`, user timers only run while you are
+logged in.
 
 ### Access via Tailscale (mobile / remote)
 
