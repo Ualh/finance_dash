@@ -384,6 +384,17 @@ class SQLiteRepository:
         ).fetchone()
         return row["at"]
 
+    def get_last_sync_run(self) -> Optional[str]:
+        """When the most recent sync of any automatic source ended (or started, if still running)."""
+        row = self._connection.execute(
+            "SELECT MAX(COALESCE(finished_at, started_at)) AS at FROM sync_log"
+        ).fetchone()
+        return row["at"]
+
+    def get_last_neon_upload(self) -> Optional[str]:
+        row = self._connection.execute("SELECT MAX(uploaded_at) AS at FROM neon_uploads").fetchone()
+        return row["at"]
+
     def import_wise_transactions(self, rows: list[dict]) -> int:
         """Insert Wise statement lines, skipping any already stored (same reference and currency)."""
         cursor = self._connection.cursor()

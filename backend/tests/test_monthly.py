@@ -98,6 +98,21 @@ class TestFreshness:
         assert sources["finpension"]["total_chf"] is None
 
 
+    def test_dashboard_shows_last_sync_and_last_neon_import(self, client):
+        d = client.get("/dashboard").json()
+        assert d["last_sync_at"] is None and d["last_neon_import_at"] is None
+
+        with freeze_time("2026-06-26 09:00:00"):
+            upload_neon(client)
+        repo().log_sync_start("binance", "2026-11-04T06:00:00+00:00")
+        repo().log_sync_end("binance", "error", "API unreachable", "2026-11-04T06:00:00+00:00")
+        repo().log_sync_start("wise", "2026-11-04T06:00:01+00:00")
+
+        d = client.get("/dashboard").json()
+        assert d["last_neon_import_at"] == "2026-06-26T09:00:00+00:00"
+        # The latest run counts even when it failed or is still running: it says when the sync last ran.
+        assert d["last_sync_at"] >= "2026-11-04T06:00:01+00:00"
+
 class TestCashWithdrawals:
 
     def test_record_list_and_delete(self, client):

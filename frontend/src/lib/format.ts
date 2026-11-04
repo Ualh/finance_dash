@@ -39,3 +39,21 @@ export function formatDay(isoDate: string, currentYear: number): string {
     timeZone: "UTC",
   });
 }
+
+/** Whole days from `iso` to `now`, by calendar day in local time. */
+export function daysAgo(iso: string, now: Date): number {
+  const then = new Date(iso);
+  const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((day(now) - day(then)) / 86_400_000);
+}
+
+/** A past moment in local time: "today 06:00", "yesterday 06:00", else "3 Jun" (with the year when it differs). */
+export function formatMoment(iso: string, now: Date): string {
+  const then = new Date(iso);
+  const days = daysAgo(iso, now);
+  const time = then.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  if (days <= 0) return `today ${time}`;
+  if (days === 1) return `yesterday ${time}`;
+  const local = `${then.getFullYear()}-${String(then.getMonth() + 1).padStart(2, "0")}-${String(then.getDate()).padStart(2, "0")}`;
+  return formatDay(local, now.getFullYear());
+}
