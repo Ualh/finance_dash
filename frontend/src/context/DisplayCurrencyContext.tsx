@@ -22,7 +22,7 @@ export const DisplayCurrencyProvider: React.FC<DisplayCurrencyProviderProps> = (
   const api = useApiClient();
   const [currency, setCurrencyState] = useState<DisplayCurrency>(DEFAULT_CURRENCY);
   const [loading, setLoading] = useState(false);
-  const [initialised, setInitialised] = useState(false);
+  const [, setInitialised] = useState(false);
 
   useEffect(() => {
     api.getSetting("display_currency").then((res) => {

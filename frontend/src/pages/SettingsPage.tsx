@@ -62,23 +62,6 @@ const SettingsPage: React.FC = () => {
     }
   }, [api]);
 
-  const loadAnchor = useCallback(async () => {
-    try {
-      const [dateRes, amountRes] = await Promise.all([
-        api.getSetting("neon_anchor_date"),
-        api.getSetting("neon_anchor_amount"),
-      ]);
-      const d = dateRes.value ?? "";
-      const a = amountRes.value ?? "";
-      setAnchorDate(d);
-      setAnchorAmount(a);
-      setAnchorPrevDate(d);
-      setAnchorPrevAmount(a);
-    } catch {
-      // ignore
-    }
-  }, [api]);
-
   useEffect(() => {
     loadHoldings();
     loadAnchors();
@@ -147,7 +130,7 @@ const SettingsPage: React.FC = () => {
       setEditId(null);
       setEditValue("");
       await loadHoldings();
-    } catch (e) {
+    } catch {
       // ignore
     } finally {
       setSavingId(null);
