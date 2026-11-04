@@ -118,6 +118,8 @@ def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)], curren
         "spending": recent_spending(repo, today),
         "sources": sources,
         "stale_after_days": STALE_AFTER_DAYS,
+        "last_sync_at": repo.get_last_sync_run(),
+        "last_neon_import_at": repo.get_last_neon_upload(),
     }
 
     target = currency.upper()

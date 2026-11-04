@@ -44,6 +44,10 @@ export interface DashboardResponse {
   spending: MonthSpending[];
   sources: Record<string, SourceInfo>;
   stale_after_days: number;
+  /** When the latest sync of an automatic source ran (ISO timestamp, UTC), whatever its outcome. */
+  last_sync_at: string | null;
+  /** When a Neon CSV was last uploaded (ISO timestamp, UTC). */
+  last_neon_import_at: string | null;
   _fx?: FxInfo;
 }
 

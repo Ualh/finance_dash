@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatChange, formatDay, formatMonthLong, formatMonthShort } from "./format.ts";
+import { daysAgo, formatChange, formatDay, formatMoment, formatMonthLong, formatMonthShort } from "./format.ts";
 
 const strip = (s: string) => s.replace(/[\s  ’']/g, "");
 
@@ -19,4 +19,13 @@ test("month labels", () => {
 test("day labels show the year only when it differs", () => {
   assert.equal(formatDay("2026-06-03", 2026), "3 Jun");
   assert.equal(formatDay("2025-12-31T10:00:00+00:00", 2026), "31 Dec 2025");
+});
+
+test("moments read as today, yesterday, or a day", () => {
+  const now = new Date(2026, 10, 4, 12, 0);
+  assert.equal(formatMoment(new Date(2026, 10, 4, 6, 5).toISOString(), now), "today 06:05");
+  assert.equal(formatMoment(new Date(2026, 10, 3, 23, 59).toISOString(), now), "yesterday 23:59");
+  assert.equal(formatMoment(new Date(2026, 5, 26, 9, 0).toISOString(), now), "26 Jun");
+  assert.equal(formatMoment(new Date(2025, 11, 31, 9, 0).toISOString(), now), "31 Dec 2025");
+  assert.equal(daysAgo(new Date(2026, 9, 1, 8, 0).toISOString(), now), 34);
 });

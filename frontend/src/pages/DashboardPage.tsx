@@ -7,7 +7,7 @@ import { useApiClient } from "@/hooks/useApiClient";
 import { useDisplayCurrency } from "@/context/DisplayCurrencyContext";
 import { CurrencyToggle } from "@/components/CurrencyToggle";
 import { DataState } from "@/components/DataState";
-import { formatChange, formatDay, formatMoney, formatMonthLong, formatMonthShort } from "@/lib/format";
+import { daysAgo, formatChange, formatDay, formatMoment, formatMoney, formatMonthLong, formatMonthShort } from "@/lib/format";
 import type { DashboardResponse, MonthPoint, SourceInfo } from "@/lib/types";
 
 const Curve: React.FC<{ points: MonthPoint[]; currency: string }> = ({ points, currency }) => (
@@ -68,6 +68,33 @@ const SourceRow: React.FC<{ info: SourceInfo; currency: string; year: number }> 
   );
   // A stale manual source is fixed on the Update page: the row takes you there.
   return info.stale && info.kind === "manual" ? <Link to="/update">{row}</Link> : row;
+};
+
+// The daily sync runs at 06:00; missing more than one run means it has stopped.
+const SYNC_LATE_AFTER_DAYS = 2;
+
+/** "Synced today 06:00 · Neon CSV imported 26 Jun": orange when the moment is missing or too old. */
+const LastUpdates: React.FC<{ data: DashboardResponse }> = ({ data }) => {
+  const now = new Date();
+  const items = [
+    { label: "Synced", at: data.last_sync_at, lateAfter: SYNC_LATE_AFTER_DAYS },
+    { label: "Neon CSV imported", at: data.last_neon_import_at, lateAfter: data.stale_after_days },
+  ];
+  return (
+    <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+      {items.map(({ label, at, lateAfter }, i) => (
+        <span key={label} className="flex gap-x-3">
+          {i > 0 && <span aria-hidden="true">·</span>}
+          <span
+            className={clsx((!at || daysAgo(at, now) > lateAfter) && "font-medium text-amber-600 dark:text-amber-400")}
+            title={at ? new Date(at).toLocaleString("en-GB") : undefined}
+          >
+            {label} {at ? formatMoment(at, now) : "never"}
+          </span>
+        </span>
+      ))}
+    </p>
+  );
 };
 
 const DashboardPage: React.FC = () => {
@@ -169,6 +196,9 @@ const DashboardPage: React.FC = () => {
                 </p>
               )}
               {data._fx?.stale && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Old exchange rate</p>}
+              <div className="mt-2">
+                <LastUpdates data={data} />
+              </div>
               {data.history.length > 1 && (
                 <div className="mt-4">
                   <Curve points={data.history} currency={cur} />
