@@ -46,7 +46,8 @@ def parse_neon_csv(content: str | bytes) -> list[dict]:
             amount = float(amount_str)
         except ValueError:
             raise NeonParseError(f"Row {i}: invalid Amount value {amount_str!r}")
-        rows.append({"date": date_str, "amount": amount})
+        is_space = cleaned.get("Spaces", "").lower() == "yes"
+        rows.append({"date": date_str, "amount": amount, "is_space": is_space})
 
     return rows
 

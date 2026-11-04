@@ -10,7 +10,7 @@ from backend.database import SQLiteRepository
 
 logger = logging.getLogger(__name__)
 
-FRANKFURTER_BASE = "https://api.frankfurter.dev"
+FRANKFURTER_BASE = "https://api.frankfurter.dev/v1"
 
 SUPPORTED_QUOTES = {"CHF", "USD"}
 
@@ -59,3 +59,13 @@ def convert(repo: SQLiteRepository, amount_chf: float, target: str, client: Opti
 
     result = get_fx_rate(repo, "CHF", target, client)
     return {"amount": round(amount_chf * result["rate"], 2), "rate": result["rate"], "stale": result["stale"], "currency": target}
+
+
+def convert_to_chf(repo: SQLiteRepository, amount: float, source_currency: str, client: Optional[FrankfurterClient] = None) -> dict:
+    """Convert an amount in some source currency into CHF (the storage currency)."""
+    source = source_currency.upper()
+    if source == "CHF":
+        return {"amount_chf": amount, "rate": 1.0, "stale": False, "currency": source}
+
+    result = get_fx_rate(repo, source, "CHF", client)
+    return {"amount_chf": round(amount * result["rate"], 2), "rate": result["rate"], "stale": result["stale"], "currency": source}

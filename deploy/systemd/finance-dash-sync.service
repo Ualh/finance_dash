@@ -1,0 +1,7 @@
+[Unit]
+Description=finance_dash daily sync (Binance, Wise, IBKR, FX) and net-worth snapshot
+After=finance-dash.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl --fail --silent --show-error --max-time 300 -X POST http://127.0.0.1:8001/sync/all
