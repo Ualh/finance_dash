@@ -25,7 +25,7 @@ _Avoid_: entry, line, movement.
 **Space**:
 A higher-interest savings pocket *inside* the same Neon account. It is still the
 same money, so its Transactions are **merged into the single Neon balance** — no
-separate line, and the `Spaces` CSV column is ignored. The Neon balance =
+separate line. The `Spaces` CSV column only keeps pocket moves out of Spending. The Neon balance =
 `Anchor + sum of all Transactions on or after the anchor date`.
 _Avoid_: pot, sub-account, separate holding.
 
@@ -39,6 +39,22 @@ A single valued line on the dashboard (e.g. `Neon (main)`, `Neon – Space`,
 A runtime classification of each Holding into **Disponible** (available),
 **Investi** (invested), or **Bloqué** (locked), derived from `asset_class`.
 Never persisted.
+
+### Monthly ritual
+
+**Stale**:
+A source whose figure is more than 35 days old (Neon: its latest Transaction;
+automatic sources: their last good sync). Shown in orange and listed by
+`GET /freshness` for the monthly reminder.
+
+**Spending**:
+Money that left Neon or Wise for the outside world in a calendar month, plus
+Cash withdrawals with no matching bank line.
+_Avoid_: expenses, outflows.
+
+**Cash withdrawal**:
+Cash taken out (amount, date, optional note). It is Spending in its month and is
+counted once with the matching ATM debit. It never changes net worth.
 
 ## Example dialogue
 

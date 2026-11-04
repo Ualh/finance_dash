@@ -1,0 +1,10 @@
+[Unit]
+Description=finance_dash daily SQLite backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/finance_dash
+# FINANCE_DASH_DB_FILE, FINANCE_DASH_BACKUP_DIR (default ~/backups/finance_dash),
+# FINANCE_DASH_BACKUP_KEEP (default 30) can be set in .env
+EnvironmentFile=-%h/Projects/finance_dash/.env
+ExecStart=%h/Projects/finance_dash/.venv/bin/python -m backend.backup

@@ -1,0 +1,16 @@
+[Unit]
+Description=finance_dash (FastAPI + served React build)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/finance_dash
+ExecStart=%h/Projects/finance_dash/.venv/bin/uvicorn backend.api:app --host 0.0.0.0 --port 8001
+Restart=on-failure
+RestartSec=3
+# API keys and path overrides (see .env.example); optional
+EnvironmentFile=-%h/Projects/finance_dash/.env
+
+[Install]
+WantedBy=default.target

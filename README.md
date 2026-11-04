@@ -12,11 +12,16 @@ view everything through a clean React dashboard.
 │  (frontend/)       │HTTP │  (backend/)                  │
 │                    │     │                              │
 │  Dev :5173         │     │  GET  /dashboard             │
-│  Prod: served by   │     │  POST /sync/all              │
-│        FastAPI     │     │  POST /holdings/neon/upload  │
+│  Prod: served by   │     │  GET  /freshness             │
+│        FastAPI     │     │  POST /sync/all              │
+│                    │     │  POST /holdings/neon/upload  │
 │                    │     │  POST /holdings/finpension   │
+│                    │     │  POST /holdings              │
 │                    │     │  GET  /holdings              │
 │                    │     │  PUT  /holdings/:id          │
+│                    │     │  POST /cash-withdrawals      │
+│                    │     │  GET  /cash-withdrawals      │
+│                    │     │  DEL  /cash-withdrawals/:id  │
 │                    │     │  GET  /settings/:key         │
 │                    │     │  PUT  /settings/:key         │
 └────────────────────┘     │  GET  /health                │
@@ -24,31 +29,71 @@ view everything through a clean React dashboard.
                                       │
                            ┌──────────▼───────────────────┐
                            │  SQLite (finance_dash.db)     │
-                           │  Tables:                     │
-                           │  - holdings                  │
-                           │  - nw_snapshots              │
-                           │  - fx_rates                  │
-                           │  - sync_log                  │
-                           │  - settings                  │
+                           │  holdings, nw_snapshots,      │
+                           │  neon_uploads,                │
+                           │  neon_transactions,           │
+                           │  wise_transactions,           │
+                           │  cash_withdrawals, fx_rates,  │
+                           │  sync_log, settings           │
                            └──────────────────────────────┘
 ```
+
+The dashboard is one screen: net worth, the change since the end of last month,
+the month-by-month curve, each source with the date its figure is valid for
+(orange when older than 35 days), and what was spent this month and last month.
 
 ## Data sources
 
 | Source | Type | How it works |
 |--------|------|-------------|
-| **Neon** | CSV upload | Upload your account statement CSV via the UI; balance is derived automatically |
-| **Finpension** | Manual input | Enter your pension account CHF value in the Update page |
-| **Binance** | API (read-only) | Configure keys in `.env`, sync fetches balances and converts to CHF |
+| **Neon** | CSV upload, monthly | Export the month's statement CSV in the Neon app and upload it on the Update page. Balance = anchor + all stored transactions. |
+| **Finpension** | Manual, monthly | Type the value shown in the Finpension app on the Update page. |
+| **Binance** | Automatic | Read-only API key. Every wallet (Spot, Funding, Earn, …) is valued through `GET /sapi/v1/asset/wallet/balance`, one line per wallet. |
+| **Wise** | Automatic | Personal API token. Balances count in net worth; statement lines count as spending. |
+| **IBKR** | Automatic | Flex Web Service token + Activity Flex Query; the account's net asset value. |
+| **Cash withdrawals** | Manual | Amount, date and an optional note on the Update page. |
+| **Other holdings** | Manual | Any account in any currency (converted to CHF) from the Update page. |
+
+Neon and Finpension have no API for individuals, so they stay a two-minute
+monthly gesture. Automatic sources are synced only when their credentials are in
+`.env`, including the very first time (no existing row is needed).
+
+### Spending and cash
+
+Spending for a month = Neon outflows (except moves into or out of a Space) +
+Wise debits (except conversions and moves between your own balances) + cash
+withdrawals that have no matching bank line. A cash withdrawal and an ATM debit
+of the same amount within 3 days are the same money and are counted once,
+whether the bank data arrives before or after the cash is recorded. Cash records
+never change net worth: the bank balance already fell when the cash left it, and
+cash in hand is treated as spent.
+
+### Getting the keys
+
+- **Binance**: API Management → Create API → tick only *Enable Reading* (no
+  trading, no withdrawals) and restrict it to the server's IP. Put
+  `BINANCE_API_KEY` / `BINANCE_API_SECRET` in `.env`.
+- **Wise**: Settings → API tokens → Add new token, *Read only*. Put it in
+  `WISE_API_TOKEN`. Outside US/AU/NZ/SG/CA/MY, Wise asks for strong customer
+  authentication on statements (at most every 90 days): generate a key pair
+  (`openssl genrsa -out wise_private.pem 2048` and
+  `openssl rsa -pubout -in wise_private.pem -out wise_public.pem`), upload the
+  public key under API tokens → Manage public keys, and set
+  `WISE_PRIVATE_KEY_PATH` to the private key. Without it, balances still sync
+  and the sync log explains why spending was skipped.
+- **IBKR**: Client Portal → Performance & Reports → Flex Queries. Create an
+  Activity Flex Query (XML, period *Last Business Day*) with the section
+  *Net Asset Value (NAV) in Base* (or *Change in NAV*); note its Query ID. Then
+  in *Flex Web Service Configuration* enable the service and generate a token
+  (optionally IP-restricted). The token only reads reports. Put them in
+  `IBKR_FLEX_TOKEN` / `IBKR_FLEX_QUERY_ID`.
 
 ## Prerequisites
 
 - Python 3.11+
-- Node.js 18+
+- Node.js 22.18+ (the frontend unit tests use Node's built-in TypeScript support)
 - A Tailscale network (for mobile / remote access)
-
-Optional:
-- Binance API key + secret (read-only, for crypto balance sync)
+- `curl` and `openssl` on the server
 
 ## Quick start (development)
 
@@ -59,13 +104,13 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Optional: copy and edit .env with your Binance read-only keys
+# Optional: copy and fill in the keys of the sources you use
 cp .env.example .env
 
 python main.py
 ```
 
-The API is now at `http://127.0.0.1:8000` — visit `/docs` for Swagger UI.
+The dev API is now at `http://127.0.0.1:8000`; visit `/docs` for Swagger UI.
 
 ### 2. Frontend (development mode)
 
@@ -75,8 +120,8 @@ npm install
 npm run dev
 ```
 
-The Vite dev server starts at `http://127.0.0.1:5173`. API calls are made
-directly to `http://127.0.0.1:8000` (configured via `VITE_API_BASE_URL`).
+The Vite dev server starts at `http://127.0.0.1:5173` and calls the dev API at
+`http://127.0.0.1:8000`.
 
 ### 3. Verify
 
@@ -85,76 +130,83 @@ curl http://127.0.0.1:8000/health
 # {"status":"ok"}
 ```
 
-## Production deployment (single process)
+## Production deployment
 
-Build the frontend and let FastAPI serve it as static files:
-
-```bash
-cd frontend && npm run build && cd ..
-
-# Keep VITE_API_BASE_URL empty so the frontend calls the same origin
-VITE_API_BASE_URL="" cd frontend && npm run build && cd ..
-
-python main.py
-```
-
-Now both the API and the frontend are served from `http://127.0.0.1:8000`. No
-separate Vite process needed.
-
-## Access via Tailscale (mobile / remote)
-
-1. Install Tailscale on your Linux machine and your phone.
-2. Both devices must be on the same Tailscale network.
-3. Run the backend as described above (listening on `127.0.0.1:8000`).
-4. From your phone, open `http://<tailscale-ip>:8000` in the browser.
-
-**No port is exposed to the public internet** — only Tailscale peers can reach
-the service.
-
-## Daily sync (cron)
-
-A system cron job runs every day at 06:00 to synchronise all data sources:
-
-```
-0 6 * * * curl http://localhost:8000/sync/all
-```
-
-This triggers `POST /sync/all` (the endpoint also responds to GET). No embedded
-Python scheduler is used — if FastAPI is down, the cron job simply fails
-harmlessly and retries the next day.
-
-### Manual sync
-
-Click the refresh button on the Dashboard page, or:
+The app runs as one process on **port 8001**: FastAPI serves the API and the
+built frontend, as a systemd user service. The units live in
+`deploy/systemd/` and assume the checkout is at `~/Projects/finance_dash` with
+its virtualenv in `.venv`.
 
 ```bash
-curl -X POST http://localhost:8000/sync/all
+cd ~/Projects/finance_dash
+.venv/bin/pip install -r requirements.txt
+(cd frontend && npm ci && npm run build)   # same-origin API calls by default
+
+cp deploy/systemd/finance-dash*.service deploy/systemd/finance-dash*.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now finance-dash.service
+systemctl --user enable --now finance-dash-sync.timer finance-dash-backup.timer
+systemctl --user restart finance-dash.service   # after every rebuild or .env change
 ```
 
-## SQLite backup (cron)
+| Unit | What it does |
+|------|--------------|
+| `finance-dash.service` | uvicorn on `0.0.0.0:8001`, `.env` loaded as `EnvironmentFile` |
+| `finance-dash-sync.timer` | 06:00 daily (catches up after downtime): `POST /sync/all` syncs Binance, Wise and IBKR and writes the day's snapshot |
+| `finance-dash-backup.timer` | 06:30 daily: `python -m backend.backup`, a consistent SQLite copy in `~/backups/finance_dash/`, last 30 kept |
 
-Backup the database to a secondary disk with a simple `cp` cron entry:
+Check them with `systemctl --user list-timers 'finance-dash*'` and
+`journalctl --user -u finance-dash-sync.service`. Without `loginctl
+enable-linger $USER`, user timers only run while you are logged in.
 
-```
-0 7 * * * cp /path/to/finance_dash.db /mnt/backup/finance_dash_$(date +\%Y\%m\%d).db
+`frontend/dist` is not committed: rebuild it after each pull. Leave
+`VITE_API_BASE_URL` unset (or empty) for this build so the page calls the host
+it was loaded from.
+
+### Access via Tailscale (mobile / remote)
+
+From the phone, open `http://<tailscale-ip>:8001`. The port must not be exposed
+to the public internet; only Tailscale peers should reach it.
+
+## Monthly reminder
+
+On the 1st of each month: upload last month's Neon CSV and type the Finpension
+value on the Update page. A reminder (for example a card filed by firstmate)
+reads `GET /freshness`:
+
+```json
+{
+  "stale_after_days": 35,
+  "stale": ["neon", "finpension"],
+  "actions": ["Upload last month's Neon CSV on the Update page",
+              "Type the current Finpension value on the Update page"],
+  "sources": [{"source": "neon", "label": "Neon", "kind": "manual",
+               "as_of": "2026-06-03", "age_days": 151, "stale": true,
+               "action": "Upload last month's Neon CSV on the Update page"}]
+}
 ```
 
-Replace `/mnt/backup/` with your actual backup mount point. The database is a
-single file and can be copied safely while the app is running (SQLite handles
-concurrent reads). For a consistent snapshot, use `sqlite3`:
+Neon and Finpension are always listed, even before their first entry. A
+source is stale when its figure is more than 35 days old (Neon counts from its
+latest transaction, not the upload day; automatic sources from their last good
+sync). An empty `stale` list means nothing to ask for.
 
-```
-0 7 * * * sqlite3 /path/to/finance_dash.db ".backup '/mnt/backup/finance_dash_$(date +\%Y\%m\%d).db'"
-```
+Every change (upload, manual value, sync) rewrites today's snapshot, so the
+curve and "since last month" move as soon as the monthly entry is done.
 
 ## Configuration
 
 | Environment variable | Required | Default | Description |
 |---------------------|----------|---------|-------------|
-| `BINANCE_API_KEY` | For Binance sync | — | Binance read-only API key |
-| `BINANCE_API_SECRET` | For Binance sync | — | Binance read-only API secret |
+| `BINANCE_API_KEY` / `BINANCE_API_SECRET` | For Binance | — | Read-only Binance key |
+| `WISE_API_TOKEN` | For Wise | — | Wise personal token (read only) |
+| `WISE_PROFILE_ID` | No | personal profile | Wise profile to read |
+| `WISE_PRIVATE_KEY_PATH` | For Wise spending outside US/AU/NZ/SG/CA/MY | — | Private key signing Wise's one-time SCA token |
+| `IBKR_FLEX_TOKEN` / `IBKR_FLEX_QUERY_ID` | For IBKR | — | Flex Web Service token and Activity Flex Query id |
 | `FINANCE_DASH_DB_FILE` | No | `./finance_dash.db` | Path to SQLite database file |
-| `VITE_API_BASE_URL` | No | `http://127.0.0.1:8000` | API base URL for frontend (set to empty for same-origin prod) |
+| `FINANCE_DASH_BACKUP_DIR` | No | `~/backups/finance_dash` | Backup destination |
+| `FINANCE_DASH_BACKUP_KEEP` | No | `30` | Daily backups kept |
+| `VITE_API_BASE_URL` | No | same origin (prod), `http://127.0.0.1:8000` (dev) | API base URL baked into the frontend build |
 
 ## Project structure
 
@@ -166,8 +218,12 @@ finance_dash/
 │   ├── database.py      # SQLite repository
 │   ├── csv_source/      # Neon CSV parser
 │   ├── fx/              # FX rate service
-│   ├── sources/         # Binance API sync adapter
-│   ├── sync/            # Sync engine
+│   ├── sources/         # Binance, Wise, IBKR adapters
+│   ├── sync/            # Sync engine (automatic sources)
+│   ├── snapshots.py     # Daily snapshots + monthly curve
+│   ├── freshness.py     # Per-source age, stale list for the reminder
+│   ├── spending.py      # Monthly spending, cash matched once
+│   ├── backup.py        # Daily SQLite backup
 │   └── tests/           # Pytest test suite
 ├── frontend/            # React + Vite app
 │   └── src/
@@ -177,6 +233,7 @@ finance_dash/
 │       ├── hooks/       # Custom React hooks
 │       ├── lib/         # Shared types
 │       └── pages/       # Dashboard, Update, Settings
+├── deploy/systemd/      # User units: app, daily sync, daily backup
 ├── docs/
 │   └── v1_plan.md       # PRD v1 scope reference
 ├── main.py              # Uvicorn launcher
@@ -186,8 +243,12 @@ finance_dash/
 ## Testing
 
 ```bash
-python -m pytest -q
+python -m pytest -q          # backend
+(cd frontend && npm test)    # frontend unit tests (node:test)
 ```
+
+No test reaches a real account: every source is exercised against mocked
+responses shaped after the official API docs.
 
 ## License
 

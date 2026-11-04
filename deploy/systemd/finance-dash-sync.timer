@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the finance_dash sync every day at 06:00
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+# Catch up after the machine was off at 06:00
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
