@@ -1,0 +1,3 @@
+# Tools scripts/check needs on top of requirements.txt (see CONSTRAINTS.md).
+pytest-cov>=7.0
+diff-cover>=9.0

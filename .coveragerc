@@ -1,0 +1,7 @@
+# Coverage for scripts/check (see CONSTRAINTS.md): the backend's own code, not its tests.
+[run]
+source = backend
+omit =
+    backend/tests/*
+    backend/test_*.py
+    backend/conftest.py

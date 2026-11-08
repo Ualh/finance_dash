@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# The two check entry points named in CONSTRAINTS.md, which is the source of truth: this script
+# mirrors its tables, and if the two disagree the file wins.
+#
+#   scripts/check fast   check:fast, after every edit (seconds)
+#   scripts/check task   check:task, before handing work back or opening a PR (~90 s); CI runs it
+#
+# The diff-scoped checks compare against $CHECK_BASE (default origin/main), the PR base.
+# Exit 0 when every blocking check passes, 1 otherwise. Warnings never change the exit code.
+set -uo pipefail
+
+mode=${1:-}
+if [[ $mode != fast && $mode != task ]]; then
+  echo "usage: scripts/check fast|task" >&2
+  exit 2
+fi
+
+root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel) || exit 2
+cd -- "$root" || exit 2
+base=${CHECK_BASE:-origin/main}
+if [[ -x .venv/bin/python ]]; then py=${PYTHON:-.venv/bin/python}; else py=${PYTHON:-python3}; fi
+tmp=$(mktemp -d) || exit 2
+trap 'rm -rf "$tmp"' EXIT
+export COVERAGE_FILE=$tmp/.coverage # keeps coverage.py's data file out of the checkout
+
+failed=()
+warned=()
+
+# run block|warn <name> <command...>: a failed block check fails the run, a failed warn check is reported.
+run() {
+  local kind=$1 name=$2 start=$SECONDS
+  shift 2
+  echo "== $name"
+  if "$@"; then
+    echo "   ok ($((SECONDS - start))s)"
+  elif [[ $kind == block ]]; then
+    echo "   FAILED ($((SECONDS - start))s)"
+    failed+=("$name")
+  else
+    echo "   WARNING ($((SECONDS - start))s)"
+    warned+=("$name")
+  fi
+}
+
+# have <tool> <name>: true when the tool is installed. A missing tool is a failure in CI and a skip
+# elsewhere, so a scanner that only CI installs never makes a local run red or a CI run silently green.
+have() {
+  command -v "$1" >/dev/null && return 0
+  if [[ -n ${CI:-} ]]; then
+    echo "== $2"
+    echo "   FAILED: $1 is not installed"
+    failed+=("$2")
+  else
+    echo "== $2: skipped, $1 is not installed here (CI runs it)"
+  fi
+  return 1
+}
+
+# ratchet <name> <today> <recorded-row-label>: warn when today's percentage falls more than 0.5
+# below the value recorded in CONSTRAINTS.md's "Measured, not yet enforced" table.
+ratchet() {
+  local recorded
+  recorded=$(awk -F'|' -v label="$3" '$2 ~ label { gsub(/[ %]/, "", $3); print $3; exit }' CONSTRAINTS.md)
+  echo "   $1: $2% today, $recorded% recorded"
+  awk -v now="$2" -v was="$recorded" 'BEGIN { exit !(was != "" && now + 0.5 >= was) }'
+}
+
+lcov_total() {
+  awk -F: '/^LF:/ { lf += $2 } /^LH:/ { lh += $2 } END { if (lf) printf "%.1f", 100 * lh / lf }' "$1"
+}
+
+frontend_tests() {
+  local status=0
+  (cd frontend && node --test --experimental-test-coverage \
+    --test-coverage-include='src/**' --test-coverage-exclude='src/**/*.test.ts' \
+    --test-reporter=dot --test-reporter-destination=stdout \
+    --test-reporter=lcov --test-reporter-destination="$tmp/frontend.lcov" \
+    'src/**/*.test.ts') || status=1
+  # node writes paths relative to frontend/; diff-cover reads them against the repo root.
+  [[ -f $tmp/frontend.lcov ]] && sed -i 's#^SF:src/#SF:frontend/src/#' "$tmp/frontend.lcov"
+  return "$status"
+}
+
+secrets() {
+  local mb
+  mb=$(git merge-base "$base" HEAD) || return 1
+  gitleaks git --redact --no-banner --log-opts="$mb..HEAD" .
+}
+
+semgrep_scan() {
+  semgrep scan --config p/default --metrics=off --strict --quiet --json --output "$tmp/semgrep.json" \
+    && node scripts/quality-gate.mjs semgrep "$tmp/semgrep.json"
+}
+
+# check:fast
+run block "floor guard (vs $base)" node scripts/floor-guard.mjs --base "$base"
+run block "frontend types: tsc" frontend/node_modules/.bin/tsc --noEmit -p frontend
+run block "frontend lint: eslint" npm --prefix frontend run -s lint
+
+if [[ $mode == task ]]; then
+  run block "floor guard tests" node --test --test-reporter=dot scripts/floor-guard.test.mjs
+  run block "backend tests: pytest" "$py" -m pytest -q -p no:cacheprovider \
+    --cov --cov-report="lcov:$tmp/backend.lcov" --cov-report=
+  run block "frontend tests: node --test" frontend_tests
+  if [[ -f $tmp/backend.lcov && -f $tmp/frontend.lcov ]]; then
+    run warn "changed lines covered >= 80%: diff-cover" "$py" -m diff_cover.diff_cover_tool \
+      "$tmp/backend.lcov" "$tmp/frontend.lcov" --compare-branch="$base" --fail-under=80
+    run warn "backend line coverage must not fall" ratchet backend \
+      "$("$py" -m coverage report --format=total --precision=1)" "Backend line coverage"
+    run warn "frontend line coverage must not fall" ratchet frontend \
+      "$(lcov_total "$tmp/frontend.lcov")" "Frontend line coverage"
+  fi
+  if have gitleaks "secrets: gitleaks"; then run block "secrets: gitleaks" secrets; fi
+  if have osv-scanner "dependency vulnerabilities: osv-scanner"; then
+    run warn "dependency vulnerabilities: osv-scanner" osv-scanner scan source -r .
+  fi
+  if have semgrep "code security: semgrep"; then run warn "code security: semgrep" semgrep_scan; fi
+fi
+
+echo
+((${#warned[@]})) && printf 'warning: %s\n' "${warned[@]}"
+if ((${#failed[@]})); then
+  printf 'FAILED: %s\n' "${failed[@]}"
+  echo "check:$mode failed. Fix the code; do not weaken CONSTRAINTS.md or the checks to get green."
+  exit 1
+fi
+echo "check:$mode passed (${SECONDS}s)"
