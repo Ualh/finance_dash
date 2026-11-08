@@ -20,7 +20,7 @@ MANUAL_ACTIONS = {
 }
 # Quiet, permanent facts about a source, shown under its name on the dashboard.
 NOTES = {
-    "wise": "Balances only: Wise transactions are not available through the API.",
+    "wise": "Balances only: Wise statements need SCA signing, so they are not available through the API.",
 }
 # Always listed, even before their first entry: the monthly ritual needs both.
 EXPECTED_MANUAL = ("neon", "finpension")

@@ -34,7 +34,9 @@ view everything through a clean React dashboard.
                            │  neon_transactions,           │
                            │  wise_transactions,           │
                            │  cash_withdrawals, fx_rates,  │
-                           │  sync_log, settings           │
+                           │  sync_log, settings,          │
+                           │  history_records,             │
+                           │  history_cursors              │
                            └──────────────────────────────┘
 ```
 
@@ -49,7 +51,7 @@ the month-by-month curve, each source with the date its figure is valid for
 | **Neon** | CSV upload, monthly | Export the month's statement CSV in the Neon app and upload it on the Update page. Balance = anchor + all stored transactions. |
 | **Finpension** | Manual, monthly | Type the value shown in the Finpension app on the Update page. |
 | **Binance** | Automatic | Read-only API key. Every wallet (Spot, Funding, Earn, …) is valued through `GET /sapi/v1/asset/wallet/balance`, one line per wallet. |
-| **Wise** | Automatic | Personal API token. Balances only count in net worth; Wise transactions are not available through the API. |
+| **Wise** | Automatic | Personal API token. Balances only count in net worth; Wise statements are not available through the API (SCA). The activity feed and sent transfers can be kept with the history backfill. |
 | **IBKR** | Automatic | Flex Web Service token + Activity Flex Query; the account's net asset value. |
 | **Cash withdrawals** | Manual | Amount, date and an optional note on the Update page. |
 | **Other holdings** | Manual | Any account in any currency (converted to CHF) from the Update page. |
@@ -67,6 +69,47 @@ of the same amount within 3 days are the same money and are counted once,
 whether the bank data arrives before or after the cash is recorded. Cash records
 never change net worth: the bank balance already fell when the cash left it, and
 cash in hand is treated as spent.
+
+### Past data (history backfill)
+
+The sync reads today's balances. To also keep the past that Binance and Wise still
+serve, run the backfill by hand, on the machine that holds `.env` and the database:
+
+```bash
+.venv/bin/python -m backend.history                  # every configured source
+.venv/bin/python -m backend.history --source binance # or --source wise
+.venv/bin/python -m backend.history --since 2021-01-01
+```
+
+It is not part of `POST /sync/all`: the first run walks back to 2017 (Binance) and
+2011 (Wise) in small, rate-limited batches and takes about half an hour, mostly the
+Binance fiat endpoints (one call every 15 s). Stop it whenever you like; the next run
+resumes from the last saved batch, and later runs only re-read the last few days.
+Re-running never stores a row twice. `--restart` ignores the saved positions and
+re-reads everything (still without duplicates). It prints one line per dataset and
+exits 1 if any dataset failed; the others still run.
+
+Rows are kept as the provider sent them in `history_records` (one row per source,
+dataset and record id), with the resume position of each dataset in
+`history_cursors`. The dashboard does not chart them yet.
+
+| Source | What is read | How far back |
+|--------|--------------|--------------|
+| Binance | Daily Spot snapshots, crypto deposits and withdrawals, fiat deposits and withdrawals, card/fiat buys and sells, Convert trades, Spot trades | Snapshots: the last 30 days only (Binance keeps one month). Everything else: back to July 2017, in windows under each endpoint's limit (90 days, 30 days for Convert) |
+| Wise | Activity feed (card payments, transfers, deposits, …) and sent transfers | Back to 2011 |
+
+What stays out of reach:
+
+- **Wise statements** (`balance-statements`): they need SCA request signing, which
+  Wise no longer supports for personal tokens (PSD2). They are never requested, and
+  the backfill does not try to get around it. If Wise ever answers 403 (an SCA
+  challenge) on the activity feed or transfer list, that dataset is marked `refused`
+  and skipped. Wise activity amounts are display text (`"150 JPY"`), so they do not
+  feed Spending.
+- **Binance snapshots older than a month**: Binance deletes them. Run the backfill
+  at least once a month to keep the daily series unbroken.
+- **Binance trades on delisted pairs**: trades are read per pair, and only pairs
+  still listed (whose two assets appear in your history or balances) can be asked for.
 
 ### Getting the keys
 
@@ -232,6 +275,7 @@ finance_dash/
 │   ├── fx/              # FX rate service
 │   ├── sources/         # Binance, Wise, IBKR adapters
 │   ├── sync/            # Sync engine (automatic sources)
+│   ├── history/         # Past-data backfill (python -m backend.history)
 │   ├── snapshots.py     # Daily snapshots + monthly curve
 │   ├── freshness.py     # Per-source age, stale list for the reminder
 │   ├── spending.py      # Monthly spending, cash matched once

@@ -111,6 +111,27 @@ class SQLiteRepository:
 
             CREATE INDEX IF NOT EXISTS idx_wise_transactions_date ON wise_transactions(date);
 
+            CREATE TABLE IF NOT EXISTS history_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                dataset TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                occurred_at TEXT,
+                payload TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                UNIQUE(source, dataset, record_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_history_records_occurred ON history_records(source, dataset, occurred_at);
+
+            CREATE TABLE IF NOT EXISTS history_cursors (
+                key TEXT PRIMARY KEY,
+                position TEXT,
+                status TEXT NOT NULL DEFAULT 'ok',
+                note TEXT,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS cash_withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -470,3 +491,55 @@ class SQLiteRepository:
         )
         self._connection.commit()
 
+    def save_history_batch(self, source: str, dataset: str, records: list[dict],
+                           cursor_key: Optional[str] = None, cursor_position: Optional[str] = None) -> int:
+        """Store raw history records and move the resume cursor, in one transaction.
+
+        A record already stored (same source, dataset and record_id) is refreshed in place
+        (a pending deposit becomes credited), never duplicated. The cursor only moves when
+        the records before it are safely written, so an interrupted backfill resumes without
+        gaps. Returns how many records were new.
+        """
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        count_sql = "SELECT COUNT(*) AS n FROM history_records WHERE source = ? AND dataset = ?"
+        with self._connection:
+            before = self._connection.execute(count_sql, (source, dataset)).fetchone()["n"]
+            self._connection.executemany(
+                """INSERT INTO history_records (source, dataset, record_id, occurred_at, payload, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(source, dataset, record_id) DO UPDATE SET
+                       occurred_at = excluded.occurred_at,
+                       payload = excluded.payload,
+                       fetched_at = excluded.fetched_at""",
+                [(source, dataset, r["record_id"], r.get("occurred_at"), r["payload"], now) for r in records],
+            )
+            after = self._connection.execute(count_sql, (source, dataset)).fetchone()["n"]
+            if cursor_key is not None:
+                self._set_history_cursor(cursor_key, cursor_position, "ok", None, now)
+        return after - before
+
+    def get_history_cursor(self, key: str) -> Optional[dict]:
+        row = self._connection.execute("SELECT * FROM history_cursors WHERE key = ?", (key,)).fetchone()
+        return dict(row) if row else None
+
+    def set_history_cursor_status(self, key: str, status: str, note: Optional[str]) -> None:
+        """Record why a dataset stopped (e.g. refused by the provider) without moving its position."""
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        current = self.get_history_cursor(key)
+        with self._connection:
+            self._set_history_cursor(key, current["position"] if current else None, status, note, now)
+
+    def _set_history_cursor(self, key: str, position: Optional[str], status: str, note: Optional[str], now: str) -> None:
+        self._connection.execute(
+            """INSERT INTO history_cursors (key, position, status, note, updated_at) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET position = excluded.position, status = excluded.status,
+                   note = excluded.note, updated_at = excluded.updated_at""",
+            (key, position, status, note, now),
+        )
+
+    def list_history_records(self, source: str, dataset: str) -> list[dict]:
+        rows = self._connection.execute(
+            "SELECT * FROM history_records WHERE source = ? AND dataset = ? ORDER BY occurred_at, record_id",
+            (source, dataset),
+        ).fetchall()
+        return [dict(r) for r in rows]
