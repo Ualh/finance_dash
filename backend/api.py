@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from .config import load_config
 from .csv_source.neon import archive_csv, parse_neon_csv
 from .database import LIQUIDITY_BUCKET, SQLiteRepository
-from .freshness import STALE_AFTER_DAYS, source_freshness
+from .freshness import NOTES, STALE_AFTER_DAYS, source_freshness
 from .fx import convert as fx_convert
 from .fx import convert_to_chf
 from .snapshots import monthly_history, record_snapshot
@@ -108,6 +108,7 @@ def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)], curren
             "last_sync": last_log["started_at"] if last_log else None,
             "sync_error": failed,
             "sync_message": last_log["message"] if failed else None,
+            "note": NOTES.get(entry["source"]),
         }
 
     payload = {

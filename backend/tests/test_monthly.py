@@ -98,6 +98,14 @@ class TestFreshness:
         assert sources["finpension"]["total_chf"] is None
 
 
+    def test_wise_row_carries_a_note_that_transactions_are_not_available(self, client):
+        repo().replace_source_holdings("wise", "api", [{
+            "label": "Wise CHF", "asset_class": "cash", "value_chf": 100.0,
+            "native_amount": 100.0, "native_currency": "CHF"}])
+        sources = client.get("/dashboard").json()["sources"]
+        assert "not available through the API" in sources["wise"]["note"]
+        assert sources["neon"]["note"] is None
+
     def test_dashboard_shows_last_sync_and_last_neon_import(self, client):
         d = client.get("/dashboard").json()
         assert d["last_sync_at"] is None and d["last_neon_import_at"] is None

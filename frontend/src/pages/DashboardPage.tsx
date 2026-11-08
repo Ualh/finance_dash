@@ -60,6 +60,7 @@ const SourceRow: React.FC<{ info: SourceInfo; currency: string; year: number }> 
         >
           {date}
         </p>
+        {info.note && <p className="text-xs text-slate-400 dark:text-slate-500">{info.note}</p>}
       </div>
       <p className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
         {info.total_chf == null ? "—" : formatMoney(info.total_chf, currency)}
