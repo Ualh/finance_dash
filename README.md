@@ -49,7 +49,7 @@ the month-by-month curve, each source with the date its figure is valid for
 | **Neon** | CSV upload, monthly | Export the month's statement CSV in the Neon app and upload it on the Update page. Balance = anchor + all stored transactions. |
 | **Finpension** | Manual, monthly | Type the value shown in the Finpension app on the Update page. |
 | **Binance** | Automatic | Read-only API key. Every wallet (Spot, Funding, Earn, …) is valued through `GET /sapi/v1/asset/wallet/balance`, one line per wallet. |
-| **Wise** | Automatic | Personal API token. Balances count in net worth; statement lines count as spending. |
+| **Wise** | Automatic | Personal API token. Balances only count in net worth; Wise transactions are not available through the API. |
 | **IBKR** | Automatic | Flex Web Service token + Activity Flex Query; the account's net asset value. |
 | **Cash withdrawals** | Manual | Amount, date and an optional note on the Update page. |
 | **Other holdings** | Manual | Any account in any currency (converted to CHF) from the Update page. |
@@ -61,7 +61,7 @@ monthly gesture. Automatic sources are synced only when their credentials are in
 ### Spending and cash
 
 Spending for a month = Neon outflows (except moves into or out of a Space) +
-Wise debits (except conversions and moves between your own balances) + cash
+already-stored Wise debits (except conversions and moves between your own balances) + cash
 withdrawals that have no matching bank line. A cash withdrawal and an ATM debit
 of the same amount within 3 days are the same money and are counted once,
 whether the bank data arrives before or after the cash is recorded. Cash records
@@ -74,13 +74,10 @@ cash in hand is treated as spent.
   trading, no withdrawals) and restrict it to the server's IP. Put
   `BINANCE_API_KEY` / `BINANCE_API_SECRET` in `.env`.
 - **Wise**: Settings → API tokens → Add new token, *Read only*. Put it in
-  `WISE_API_TOKEN`. Outside US/AU/NZ/SG/CA/MY, Wise asks for strong customer
-  authentication on statements (at most every 90 days): generate a key pair
-  (`openssl genrsa -out wise_private.pem 2048` and
-  `openssl rsa -pubout -in wise_private.pem -out wise_public.pem`), upload the
-  public key under API tokens → Manage public keys, and set
-  `WISE_PRIVATE_KEY_PATH` to the private key. Without it, balances still sync
-  and the sync log explains why spending was skipped.
+  `WISE_API_TOKEN`. Only balances sync: Wise no longer supports request signing
+  (SCA) on personal accounts (PSD2), so its statement endpoint is unusable and is
+  not requested. This is expected, not a sync error; the dashboard says so under
+  the Wise row.
 - **IBKR**: Client Portal → Performance & Reports → Flex Queries. Create an
   Activity Flex Query (XML, period *Last Business Day*) with the section
   *Net Asset Value (NAV) in Base* (or *Change in NAV*); note its Query ID. Then
@@ -217,7 +214,6 @@ curve and "since last month" move as soon as the monthly entry is done.
 | `BINANCE_API_KEY` / `BINANCE_API_SECRET` | For Binance | — | Read-only Binance key |
 | `WISE_API_TOKEN` | For Wise | — | Wise personal token (read only) |
 | `WISE_PROFILE_ID` | No | personal profile | Wise profile to read |
-| `WISE_PRIVATE_KEY_PATH` | For Wise spending outside US/AU/NZ/SG/CA/MY | — | Private key signing Wise's one-time SCA token |
 | `IBKR_FLEX_TOKEN` / `IBKR_FLEX_QUERY_ID` | For IBKR | — | Flex Web Service token and Activity Flex Query id |
 | `FINANCE_DASH_DB_FILE` | No | `./finance_dash.db` | Path to SQLite database file |
 | `FINANCE_DASH_BACKUP_DIR` | No | `~/backups/finance_dash` | Backup destination |

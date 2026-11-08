@@ -18,6 +18,10 @@ MANUAL_ACTIONS = {
     "neon": "Upload last month's Neon CSV on the Update page",
     "finpension": "Type the current Finpension value on the Update page",
 }
+# Quiet, permanent facts about a source, shown under its name on the dashboard.
+NOTES = {
+    "wise": "Balances only: Wise transactions are not available through the API.",
+}
 # Always listed, even before their first entry: the monthly ritual needs both.
 EXPECTED_MANUAL = ("neon", "finpension")
 

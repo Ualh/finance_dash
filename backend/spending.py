@@ -1,7 +1,8 @@
 """Money spent per calendar month: Neon and Wise outflows plus cash withdrawals, each counted once.
 
 - Neon: negative transactions, except moves into or out of a Space (same account).
-- Wise: debits, except conversions and moves between the user's own balances.
+- Wise: stored debits, except conversions and moves between the user's own balances
+  (the API no longer provides statements, so only previously stored lines count).
 - Cash: a withdrawal is spending in the month it was taken out. When the matching
   ATM debit is already in Neon or Wise (same amount within 3 days) that debit is the
   spending and the cash record only labels it, so nothing is counted twice whether

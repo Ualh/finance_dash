@@ -12,6 +12,8 @@ export interface SourceInfo {
   last_sync: string | null;
   sync_error: boolean;
   sync_message: string | null;
+  /** A permanent, quiet remark about the source (e.g. Wise: balances only). */
+  note: string | null;
 }
 
 export interface FxInfo {
