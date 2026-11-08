@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // floor-guard.mjs — diff-scoped enforcement of the CONSTRAINTS.md floor.
 // Usage: node floor-guard.mjs [--base <ref>]   (default base: origin/main)
+//
+// Adapted for finance_dash from addyosmani/agent-skills@301b02b
+// (skills/constraint-driven-development/references/floor-guard.md). Every departure from the
+// reference is marked `finance_dash` below; scripts/floor-guard.test.mjs covers them.
 import { execFileSync } from 'node:child_process';
 
 const base = (() => {
@@ -28,7 +32,9 @@ const mergeBase = git(['merge-base', base, 'HEAD'])?.trim();
 if (!mergeBase) bail('no merge base against ' + base);
 
 // Unified diff plus untracked files (git diff alone cannot see new files).
-const tracked = git(['diff', '--unified=0', mergeBase, '--']);
+// finance_dash: --no-renames, so a renamed file reads as deleted plus created and a guard file
+// or test file renamed away is still seen leaving.
+const tracked = git(['diff', '--no-renames', '--unified=0', mergeBase, '--']);
 if (tracked === null) bail('could not diff against ' + mergeBase);
 const untrackedFiles = git(['ls-files', '--others', '--exclude-standard']);
 if (untrackedFiles === null) bail('could not list untracked files');
@@ -43,7 +49,7 @@ const diff = tracked + '\n' + untracked;
 // `@@` hunk; inside a hunk every line is content, so an added `++i` (shown as `+++i`) or a removed
 // `-- comment` is a change, not a header. Both headers name the file, so a deletion
 // (`+++ /dev/null`) keeps its name.
-const added = [], removed = [], deleted = [];
+const added = [], removed = [], deleted = [], created = [];
 const pathOf = (s) => s.replace(/^[ab]\//, '');
 let file = '', oldFile = '', inHeader = false;
 for (const line of diff.split('\n')) {
@@ -55,6 +61,7 @@ for (const line of diff.split('\n')) {
       const newFile = pathOf(line.slice(4));
       file = newFile === '/dev/null' ? oldFile : newFile;
       if (newFile === '/dev/null') deleted.push(file);
+      if (oldFile === '/dev/null') created.push(file);
     }
   }
   else if (line.startsWith('+')) added.push({ file, text: line.slice(1) });
@@ -63,28 +70,56 @@ for (const line of diff.split('\n')) {
 
 const findings = [];
 const flag = (rule, f, text) => findings.push({ rule, file: f, text: text.trim().slice(0, 120) });
-const isTest = (f) => /\.(test|spec)\.|_test\.|test_/.test(f);
+// finance_dash adds pytest's conftest.py, where shared fixtures and their checks live.
+const isTest = (f) => /\.(test|spec)\.|_test\.|test_|(^|\/)conftest\.py$/.test(f);
 const isConstraints = (f) => /CONSTRAINTS\.md$/.test(f);
+// finance_dash: the files that run the bar. They contain the very patterns they look for, so the
+// pattern checks skip them, and any change to one already on the base is reported instead: a human
+// reviews a change to the guard, an agent does not make it to get to green.
+const GUARD_FILES = new Set([
+  'scripts/floor-guard.mjs', 'scripts/floor-guard.test.mjs', 'scripts/quality-gate.mjs',
+  'scripts/check', '.github/workflows/constraints.yml', '.coveragerc',
+]);
+// Prose cannot silence a checker, and it may name the patterns, so markdown skips the pattern checks.
+const patternChecked = (f) => !GUARD_FILES.has(f) && !/\.md$/i.test(f);
 
 // 1. Silenced checker — extend this list for your ecosystem.
-const SUPPRESSIONS = /@ts-ignore|@ts-nocheck|eslint-disable|biome-ignore|# *noqa|# *type: *ignore|istanbul ignore|nosemgrep|gitleaks:allow|Stryker disable/;
+// finance_dash adds the TypeScript and Python forms its stack uses: @ts-expect-error, coverage.py's
+// `pragma: no cover` (the Python `istanbul ignore`), bandit's `nosec` and pyright's ignore.
+const SUPPRESSIONS = /@ts-ignore|@ts-nocheck|@ts-expect-error|eslint-disable|biome-ignore|# *noqa|# *type: *ignore|# *pyright: *ignore|# *nosec\b|pragma: *no *cover|istanbul ignore|nosemgrep|gitleaks:allow|Stryker disable/;
 // 4. Unfinished work.
-const STUBS = /throw new (Error|NotImplemented).*[Nn]ot implemented|catch\s*\(\w*\)\s*\{\s*\}|catch\s*\{\s*\}|\bTODO\b|\bpass\s*# *stub/;
+// finance_dash adds Python's stub and swallowed exception: `raise NotImplementedError`, `except ...: pass`.
+const STUBS = /throw new (Error|NotImplemented).*[Nn]ot implemented|catch\s*\(\w*\)\s*\{\s*\}|catch\s*\{\s*\}|\bTODO\b|\bpass\s*# *stub|\braise NotImplementedError\b|\bexcept\b[^:]*:\s*pass\b/;
 // 2. A test made easier (added skips).
-const SKIPS = /\.(skip|todo)\b|\bxit\(|\bxdescribe\(|@pytest\.mark\.skip|t\.Skip\(/;
+// finance_dash adds pytest's xfail and node:test's `{ skip: ... }` / `{ todo: ... }` options.
+const SKIPS = /\.(skip|todo)\b|\bxit\(|\bxdescribe\(|@pytest\.mark\.skip|t\.Skip\(|\bxfail\b|\b(skip|todo)\s*:\s*(true|['"`])/;
 
 for (const { file, text } of added) {
-  if (SUPPRESSIONS.test(text)) flag('silenced-checker', file, text);
-  if (STUBS.test(text)) flag('unfinished-work', file, text);
-  if (SKIPS.test(text)) flag('test-made-easier', file, text);
+  if (patternChecked(file) && SUPPRESSIONS.test(text)) flag('silenced-checker', file, text);
+  if (patternChecked(file) && STUBS.test(text)) flag('unfinished-work', file, text);
+  if (patternChecked(file) && SKIPS.test(text)) flag('test-made-easier', file, text);
   if (isConstraints(file) && /^\| *(W|E)\d+ *\|/.test(text)) flag('new-exception', file, text);
 }
 
+// 1c. A guard file that is on the base changed or went away (finance_dash).
+const touched = new Set([...added, ...removed].map((l) => l.file).concat(deleted));
+for (const f of touched) {
+  if (GUARD_FILES.has(f) && !created.includes(f)) {
+    flag('guard-changed', f, deleted.includes(f) ? 'file deleted' : 'file changed');
+  }
+}
+
 // 2b. A test file deleted, or an assertion removed from a test file that still exists.
+// finance_dash change: an edited assertion shows as one removed and one added line, so a file is
+// flagged only when it loses assertion lines on balance; then each removed assertion is listed.
+// `raises` covers pytest.raises; `assert\w*` covers unittest's assertEqual and node's assert.equal.
+const ASSERTION = /\b(expect|assert\w*|should|raises)\b/;
 for (const f of deleted) if (isTest(f)) flag('test-deleted', f, 'file deleted');
-for (const { file, text } of removed) {
-  if (isTest(file) && !deleted.includes(file) && /\b(expect|assert|should)\b/.test(text)) {
-    flag('assertion-removed', file, text);
+const assertionCount = (lines, f) => lines.filter((l) => l.file === f && ASSERTION.test(l.text)).length;
+for (const f of new Set(removed.map((l) => l.file))) {
+  if (!isTest(f) || deleted.includes(f) || assertionCount(removed, f) <= assertionCount(added, f)) continue;
+  for (const { text } of removed.filter((l) => l.file === f && ASSERTION.test(l.text))) {
+    flag('assertion-removed', f, text);
   }
 }
 
@@ -153,6 +188,9 @@ if (findings.some((f) => f.rule === 'rule-removed')) {
 }
 if (findings.some((f) => f.rule === 'threshold-removed')) {
   console.error('\nA threshold-removed finding can also mean a number gained or lost its direction words (">= 80%" becoming "80%", or the reverse): compare the two lines before assuming a threshold was deleted.');
+}
+if (findings.some((f) => f.rule === 'guard-changed')) {
+  console.error('\nA guard-changed finding means a file that runs the checks changed. That is a human\'s call: leave it for review rather than working around it.');
 }
 console.error('\nEach is a move that lowers the bar. Fix the code, or route it through a tracked exception.');
 process.exit(1);

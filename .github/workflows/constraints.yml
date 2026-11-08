@@ -1,0 +1,61 @@
+# Runs check:task (scripts/check task) on every pull request; see CONSTRAINTS.md.
+# A red run means the PR is not merged.
+name: constraints
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check-task:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      OSV_SCANNER_VERSION: 2.7.0
+      OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+      SEMGREP_VERSION: 1.182.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the floor guard and gitleaks diff against the PR base
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22" # the frontend tests need Node 22.18+ for TypeScript type stripping
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install project dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          npm --prefix frontend ci
+
+      - name: Install scanners
+        run: |
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$bin" gitleaks
+          curl -sSfL -o "$bin/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  $bin/osv-scanner" | sha256sum -c -
+          chmod +x "$bin/osv-scanner"
+          pipx install "semgrep==${SEMGREP_VERSION}"
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: check:task
+        run: scripts/check task
+        env:
+          CHECK_BASE: origin/${{ github.base_ref }}
