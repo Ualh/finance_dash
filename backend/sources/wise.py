@@ -4,8 +4,9 @@
 - Balances: `GET /v4/profiles/{profileId}/balances?types=STANDARD`.
 
 Wise no longer supports request signing (SCA) on personal accounts (PSD2), so its
-statement endpoint is out of reach: transactions are not available through the API and
-are deliberately not requested. Only balances sync, and that is not an error.
+statement endpoint is out of reach: statement transactions are not available through the
+API and are deliberately not requested. Only balances sync, and that is not an error.
+The past that needs no SCA (activity feed, sent transfers) is read by `backend/history/wise.py`.
 Docs: https://docs.wise.com/api-reference/balance
 """
 from __future__ import annotations
