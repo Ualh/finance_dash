@@ -79,6 +79,8 @@ const isConstraints = (f) => /CONSTRAINTS\.md$/.test(f);
 const GUARD_FILES = new Set([
   'scripts/floor-guard.mjs', 'scripts/floor-guard.test.mjs', 'scripts/quality-gate.mjs',
   'scripts/check', '.github/workflows/constraints.yml', '.coveragerc',
+  // The checkers' own configs: turning a rule or `strict` off lowers the bar as surely as a comment.
+  'frontend/eslint.config.js', 'frontend/tsconfig.json', 'frontend/tsconfig.node.json',
 ]);
 // Prose cannot silence a checker, and it may name the patterns, so markdown skips the pattern checks.
 const patternChecked = (f) => !GUARD_FILES.has(f) && !/\.md$/i.test(f);
@@ -94,12 +96,21 @@ const STUBS = /throw new (Error|NotImplemented).*[Nn]ot implemented|catch\s*\(\w
 // finance_dash adds pytest's xfail and node:test's `{ skip: ... }` / `{ todo: ... }` options.
 const SKIPS = /\.(skip|todo)\b|\bxit\(|\bxdescribe\(|@pytest\.mark\.skip|t\.Skip\(|\bxfail\b|\b(skip|todo)\s*:\s*(true|['"`])/;
 
-for (const { file, text } of added) {
-  if (patternChecked(file) && SUPPRESSIONS.test(text)) flag('silenced-checker', file, text);
-  if (patternChecked(file) && STUBS.test(text)) flag('unfinished-work', file, text);
-  if (patternChecked(file) && SKIPS.test(text)) flag('test-made-easier', file, text);
+// finance_dash: Python's usual swallowed exception spans two lines, `except X:` then `pass`.
+const EXCEPT_OPEN = /^\s*except\b[^:]*:\s*(#.*)?$/;
+const BARE_PASS = /^\s*pass\s*(#.*)?$/;
+added.forEach(({ file, text }, i) => {
+  if (patternChecked(file)) {
+    if (SUPPRESSIONS.test(text)) flag('silenced-checker', file, text);
+    if (STUBS.test(text)) flag('unfinished-work', file, text);
+    if (SKIPS.test(text)) flag('test-made-easier', file, text);
+    const prev = added[i - 1];
+    if (BARE_PASS.test(text) && prev?.file === file && EXCEPT_OPEN.test(prev.text)) {
+      flag('unfinished-work', file, text);
+    }
+  }
   if (isConstraints(file) && /^\| *(W|E)\d+ *\|/.test(text)) flag('new-exception', file, text);
-}
+});
 
 // 1c. A guard file that is on the base changed or went away (finance_dash).
 const touched = new Set([...added, ...removed].map((l) => l.file).concat(deleted));
@@ -115,6 +126,11 @@ for (const f of touched) {
 // `raises` covers pytest.raises; `assert\w*` covers unittest's assertEqual and node's assert.equal.
 const ASSERTION = /\b(expect|assert\w*|should|raises)\b/;
 for (const f of deleted) if (isTest(f)) flag('test-deleted', f, 'file deleted');
+// An assertion that cannot fail is an assertion removed, whatever the count says.
+const TRIVIAL = /\bassert\s+(True|1)\b|\bassert(\.ok)?\(\s*(true|1)\s*\)|\bexpect\(\s*true\s*\)/;
+for (const { file, text } of added) {
+  if (isTest(file) && patternChecked(file) && TRIVIAL.test(text)) flag('assertion-removed', file, text);
+}
 const assertionCount = (lines, f) => lines.filter((l) => l.file === f && ASSERTION.test(l.text)).length;
 for (const f of new Set(removed.map((l) => l.file))) {
   if (!isTest(f) || deleted.includes(f) || assertionCount(removed, f) <= assertionCount(added, f)) continue;

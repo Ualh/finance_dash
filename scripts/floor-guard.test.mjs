@@ -158,3 +158,35 @@ test('renaming a guard file away is a change to it', () => {
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /\[guard-changed\] \.github\/workflows\/constraints\.yml/);
 });
+
+test('a swallowed exception written over two lines is flagged', () => {
+  const r = guard(
+    { 'backend/x.py': 'def f():\n    return g()\n' },
+    { 'backend/x.py': 'def f():\n    try:\n        return g()\n    except ValueError:\n        pass\n' },
+  );
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /\[unfinished-work\] backend\/x\.py: pass/);
+});
+
+test('an assertion replaced by one that cannot fail is flagged', () => {
+  const py = guard(
+    { 'backend/tests/test_x.py': 'def test_a():\n    assert f() == 1\n' },
+    { 'backend/tests/test_x.py': 'def test_a():\n    assert True\n' },
+  );
+  assert.equal(py.code, 1, py.out);
+  assert.match(py.out, /\[assertion-removed\] backend\/tests\/test_x\.py: assert True/);
+  const ts = guard(
+    { 'src/a.test.ts': 'test("a", () => { assert.equal(f(), 1); });\n' },
+    { 'src/a.test.ts': 'test("a", () => { assert.ok(true); });\n' },
+  );
+  assert.equal(ts.code, 1, ts.out);
+});
+
+test('weakening a checker config is a guard change', () => {
+  const r = guard(
+    { 'frontend/tsconfig.node.json': '{ "compilerOptions": { "strict": true } }\n' },
+    { 'frontend/tsconfig.node.json': '{ "compilerOptions": { "strict": false } }\n' },
+  );
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /\[guard-changed\] frontend\/tsconfig\.node\.json/);
+});

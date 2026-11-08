@@ -19,8 +19,9 @@ root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel) || exit 2
 cd -- "$root" || exit 2
 base=${CHECK_BASE:-origin/main}
 if [[ -x .venv/bin/python ]]; then py=${PYTHON:-.venv/bin/python}; else py=${PYTHON:-python3}; fi
-tmp=$(mktemp -d)
+tmp=$(mktemp -d) || exit 2
 trap 'rm -rf "$tmp"' EXIT
+export COVERAGE_FILE=$tmp/.coverage # keeps coverage.py's data file out of the checkout
 
 failed=()
 warned=()
@@ -69,13 +70,15 @@ lcov_total() {
 }
 
 frontend_tests() {
+  local status=0
   (cd frontend && node --test --experimental-test-coverage \
     --test-coverage-include='src/**' --test-coverage-exclude='src/**/*.test.ts' \
     --test-reporter=dot --test-reporter-destination=stdout \
     --test-reporter=lcov --test-reporter-destination="$tmp/frontend.lcov" \
-    'src/**/*.test.ts') || return 1
+    'src/**/*.test.ts') || status=1
   # node writes paths relative to frontend/; diff-cover reads them against the repo root.
-  sed -i 's#^SF:src/#SF:frontend/src/#' "$tmp/frontend.lcov"
+  [[ -f $tmp/frontend.lcov ]] && sed -i 's#^SF:src/#SF:frontend/src/#' "$tmp/frontend.lcov"
+  return "$status"
 }
 
 secrets() {
@@ -107,7 +110,6 @@ if [[ $mode == task ]]; then
     run warn "frontend line coverage must not fall" ratchet frontend \
       "$(lcov_total "$tmp/frontend.lcov")" "Frontend line coverage"
   fi
-  rm -f .coverage
   if have gitleaks "secrets: gitleaks"; then run block "secrets: gitleaks" secrets; fi
   if have osv-scanner "dependency vulnerabilities: osv-scanner"; then
     run warn "dependency vulnerabilities: osv-scanner" osv-scanner scan source -r .

@@ -26,15 +26,23 @@ A red PR is not merged. Fix the code; do not weaken this file or the checks to g
 
 - No new suppression comment: `@ts-ignore`, `@ts-nocheck`, `@ts-expect-error`, `eslint-disable`, `# noqa`, `# type: ignore`, `# pyright: ignore`, `# nosec`, `# pragma: no cover`, `istanbul ignore`, `nosemgrep`, `gitleaks:allow`
 - No unimplemented stub or swallowed error: `throw new Error("Not implemented")`, `raise NotImplementedError`, an empty `catch {}`, `except ...: pass`, a `TODO` where the code should be
-- No easier tests: no test deleted, skipped (`.skip`, `{ skip: true }`, `pytest.skip`, `@pytest.mark.skip`) or marked `xfail`, and no test file that ends up with fewer assertions
+- No easier tests: no test deleted, skipped (`.skip`, `{ skip: true }`, `pytest.skip`, `@pytest.mark.skip`) or marked `xfail`, no test file that ends up with fewer assertions, and no assertion that cannot fail (`assert True`, `assert.ok(true)`)
 - No lowered bar: no threshold in this file lowered or removed, and no new Exceptions row nobody discussed
-- No change to the guard without a human: `scripts/check`, `scripts/floor-guard.mjs`, its tests, `scripts/quality-gate.mjs`, `.coveragerc` and the CI workflow fail the floor guard when changed
+- No change to the guard without a human: `scripts/check`, `scripts/floor-guard.mjs`, its tests, `scripts/quality-gate.mjs`, `.coveragerc`, the CI workflow and the checker configs (`frontend/eslint.config.js`, `frontend/tsconfig*.json`) fail the floor guard when changed
 - Existing tests, type checks and lint stay green
 - No secrets in source
 
 The first five are checked on the diff against the PR base by `scripts/floor-guard.mjs`, adapted
 from the skill's reference floor guard. Markdown files are not scanned for the patterns, since
 prose cannot silence a checker. A finding blocks: fix the code, or bring the case to a human.
+
+Changing the guard is a human's decision. A PR that changes a guard file stays red by design, and
+no agent can clear that. The captain reviews it and merges it by hand, which is the only way a red
+PR lands. Agents put guard changes in a PR of their own and say so in the PR body.
+
+The assertion check counts assertion lines per test file. Changing an expected value passes. A
+file that loses assertions overall, or gains one that cannot fail, is flagged. Assertions moved
+from one test to another in the same file are not told apart from a rewrite.
 
 ## Enforced
 
@@ -48,7 +56,7 @@ prose cannot silence a checker. A finding blocks: fix the code, or bring the cas
 | Tests (frontend) | every node:test test passes | `node --test 'src/**/*.test.ts'` in `frontend/` | task, CI | block |
 | Secrets | no secret in the commits since the PR base | `gitleaks git --redact --log-opts=<merge-base>..HEAD` | CI, task when installed | block |
 | Coverage | changed lines ≥ 80% covered | `diff-cover <pytest lcov> <node lcov> --compare-branch=origin/main` | task, CI | warn |
-| Security: dependencies | no known vulnerability | `osv-scanner scan source -r .` | CI, task when installed | warn |
+| Security: dependencies | no known vulnerability, any severity | `osv-scanner scan source -r .` | CI, task when installed | warn |
 | Security: code | no semgrep finding at high or above, including `ERROR` | `semgrep scan --config p/default --strict --json` + `node scripts/quality-gate.mjs semgrep` | CI, task when installed | warn |
 
 Why these numbers and levels:
@@ -61,6 +69,10 @@ Why these numbers and levels:
 - gitleaks runs `--redact` so a matched secret never lands in a log or transcript. It scans the
   commits since the PR base, so commit before relying on it locally.
 - Security checks warn rather than block because they have no recorded baseline yet (see below).
+  osv-scanner has no severity filter, so it warns on any known vulnerability. That is stricter than
+  the skill's "high or above" default, which is harmless while the check only warns.
+- diff-cover does the skill's "intersect the coverage report with `git diff`" step and reads both
+  lcov reports, so no project-specific script is needed.
 
 ## Measured, not yet enforced
 
