@@ -68,7 +68,8 @@ Why these numbers and levels:
   The React components have no test setup, so their lines are not counted.
 - gitleaks runs `--redact` so a matched secret never lands in a log or transcript. It scans the
   commits since the PR base, so commit before relying on it locally.
-- Security checks warn rather than block because they have no recorded baseline yet (see below).
+- Security checks warn rather than block: the dependency baseline below is far from zero, and
+  failing every PR on it would teach everyone to ignore red.
   osv-scanner has no severity filter, so it warns on any known vulnerability. That is stricter than
   the skill's "high or above" default, which is harmless while the check only warns.
 - diff-cover does the skill's "intersect the coverage report with `git diff`" step and reads both
@@ -83,9 +84,17 @@ The 0.5-point margin absorbs drift when an unrelated change moves the total.
 |--------|-------|-----------|
 | Backend line coverage | 93.2% | must not fall |
 | Frontend line coverage | 100.0% | must not fall |
+| Known dependency vulnerabilities (osv-scanner) | 79 | must not grow |
+| Semgrep findings (none at high or above) | 5 | must not grow |
 
 Backend coverage is `backend/` without its tests (`.coveragerc`). Frontend coverage covers only
 the files the node tests load. Update a value here when it improves. A drop is a finding.
+
+The two security rows come from the first CI run of `scripts/check task` (2026-11-08) and are
+compared by reading the CI log, not by a command. The 79 vulnerabilities are 2 critical, 39 high,
+33 medium and 5 low, in 28 packages. For Python, osv-scanner reads `requirements.txt`'s `>=` lower
+bounds as the versions, so those rows describe the oldest versions allowed, not the ones a fresh
+install picks. gitleaks found no leaks.
 
 ## Not covered yet
 
