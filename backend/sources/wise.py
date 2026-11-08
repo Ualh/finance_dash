@@ -10,7 +10,6 @@ Docs: https://docs.wise.com/api-reference/balance
 """
 from __future__ import annotations
 
-import logging
 import os
 from typing import Optional
 
@@ -18,8 +17,6 @@ import requests
 
 from backend.database import SQLiteRepository
 from backend.fx.service import FrankfurterClient, convert_to_chf
-
-logger = logging.getLogger(__name__)
 
 WISE_API_BASE = "https://api.wise.com"
 SOURCE = "wise"

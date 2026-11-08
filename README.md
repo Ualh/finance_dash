@@ -90,7 +90,7 @@ cash in hand is treated as spent.
 - Python 3.11+
 - Node.js 22.18+ (the frontend unit tests use Node's built-in TypeScript support)
 - A Tailscale network (for mobile / remote access)
-- `curl` and `openssl` on the server
+- `curl` on the server
 
 ## Quick start (development)
 
