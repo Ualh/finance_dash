@@ -60,18 +60,20 @@ $S doctor $RUN
 # ok    GET /health answers ok
 # ok    GET / serves the built frontend
 # ok    database is the scratch file /tmp/finance-dash-verify/<run>/finance_dash.db
-# ok    source credentials blank (Binance, Wise, IBKR)
+# ok    source credentials set and blank (Binance, Wise, IBKR)
 # ok    outbound HTTP goes to the dead proxy
-# ok    build is this checkout's HEAD 9ab69b5818b4
+# ok    built from this checkout as it is now (HEAD <sha>, no edits since launch)
 ```
 
-A HEAD mismatch means you committed or switched since launch: `stop` and `launch` again so the build matches the code under test.
+A `FAIL` on the last line means HEAD moved or a tracked file changed since launch: `stop` and `launch` again so the build matches the code under test.
+
+One live run per checkout: `launch` refuses while another run id from the same checkout is still up, because `stop` tells a run's Neon uploads apart only from the files present at its launch.
 
 ## Drive
 
 The harness is `chrome-devtools-axi`, wrapped by `$S browser $RUN …` so each run has its own bridge (`CHROME_DEVTOOLS_AXI_SESSION=fdverify-<run>`) and a throwaway profile.
 
-Browser binary: stella has no system Chrome. Set `CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH` to a Chrome for Testing binary before the first browser command. Install one into your own task data dir with `npx @puppeteer/browsers install chrome@stable --path <dir>`; an existing one is listed by `ls -d /home/ualh/firstmate/data/*/*/chrome/linux-*/chrome-linux64/chrome`. The wrapper adds `--no-sandbox` for any binary outside `/opt/google/chrome`, because Ubuntu's AppArmor only gives that path the user namespaces Chrome's sandbox needs ("No usable sandbox" otherwise).
+Browser binary: stella has no system Chrome. Set `CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH` to a Chrome for Testing binary before the first browser command, preferably one you install into your own task data dir with `npx @puppeteer/browsers install chrome@stable --path <dir>` (the binary is then `<dir>/chrome/linux-<version>/chrome-linux64/chrome`). If downloading is not allowed, other firstmate tasks have left copies (`ls -d /home/ualh/firstmate/data/*/*/chrome/linux-*/chrome-linux64/chrome`); they can disappear when those tasks are cleaned up, so name the one you used in your proof. The wrapper adds `--no-sandbox` for any binary outside `/opt/google/chrome`, because Ubuntu's AppArmor only gives that path the user namespaces Chrome's sandbox needs ("No usable sandbox" otherwise).
 
 Recipe:
 
@@ -89,7 +91,8 @@ $S browser $RUN wait "Finpension saved"
 - Every action prints a fresh accessibility snapshot. Refs like `@g7:4_5` are generation-tagged and go stale after the next action: look elements up with `ref` by role and accessible name, as the snapshot prints them (`button "Sync now"`, `textbox "Note"`, `link "⚙️ Settings"`).
 - Wait for text (`wait "<text>"`), never a fixed sleep.
 - File inputs: `upload <ref> <path>` on `button "Upload Neon CSV"` (the hidden file input).
-- Date fields: `fill` does not reach React. Click the field's `spinbutton "Month"`, then `type MMDDYYYY`.
+- Date fields: `fill` does not reach React. Click the field's month spinbutton (`spinbutton "Month Month"` on the Update page, `spinbutton "Month"` in Settings), then `type MMDDYYYY`.
+- Amounts render with a no-break space after the currency (`CHF\u00a01'350`). Never pass an amount inside a name to `ref`; match on the words, and read amounts back with `sql` or `api`.
 - At desktop width the bottom tab bar is hidden and there is no other menu: navigate with `open "$URL/update"` instead, and say so in the proof. At phone width the `Noter` pill covers the centre of the Settings tab, so open `/settings` by URL too.
 
 The feature map in [`features/README.md`](features/README.md) has one recipe per user-facing feature. Read it before driving.
@@ -116,12 +119,12 @@ Standards:
 $S stop $RUN
 # stopped server pid 12345 (port 41234)
 # stopped browser session fdverify-<run>
-# removed archived upload <checkout>/data/csv_archive/neon/<timestamp>.csv
+# removed archived upload <checkout>/data/csv_archive/neon/<timestamp>.csv   (one line per upload)
 # removed scratch state /tmp/finance-dash-verify/<run>
 # proof kept in <proof dir>
 ```
 
-`stop` kills only the process group launch started (by recorded pid, never by name), stops this run's browser session, deletes the Neon CSV copies this run's uploads added to `<checkout>/data/csv_archive/neon/` (files that were there before launch stay), and removes the scratch dir with the database. It never touches the proof dir. Run it after every failed attempt too, then check the proof dir still holds your files. `frontend/dist` is left built; it is gitignored build output.
+`stop` kills only the process group launch started (by recorded pid, never by name, and only while that pid is still this run's uvicorn), stops this run's browser session, deletes the Neon CSV copies this run's uploads added to `<checkout>/data/csv_archive/neon/` (files that were there before launch stay), and removes the scratch dir with the database. It never touches the proof dir. Run it after every failed attempt too, then check the proof dir still holds your files. `frontend/dist` is left built; it is gitignored build output.
 
 ## What this stand-in does not cover
 

@@ -16,7 +16,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 - Find elements with `$S ref $RUN '<role> "<name>"'` exactly as the snapshot prints them, then pass the printed `@ref` to `click`, `fill` or `upload`. Never reuse a ref after another action.
 - Pages: Dashboard `/`, Update `/update`, Settings `/settings`. At phone width the bottom tab bar has `link "📊 Dashboard"`, `link "✏️ Update"` and `link "⚙️ Settings"`.
 - Date fields (`Date` group): `fill` does not reach React. Click the `spinbutton "Month"` (or `spinbutton "Month Month"` on the Update page), then `$S browser $RUN type MMDDYYYY`.
-- Amounts are typed plain (`42000`). The page prints them Swiss-style (`CHF 42'000`, `CHF 1'350.00`); assert on the words around the number, or on the stored value via `sql`.
+- Amounts are typed plain (`42000`). The page prints them Swiss-style with a no-break space after the currency (`CHF 42'000`, `CHF 1'350.00` as written in this map). Assert on the words around the number and on the stored value via `sql`; never pass an amount to `ref`.
 - Never click `button "Noter"` and never type in `textbox "Observation"`: that widget posts to the captain's real notes service.
 - Treat every command as literal. Keep quoted names unchanged, including the emoji in tab names.
 

@@ -22,7 +22,7 @@ Preconditions:
 - Baseline instance, 390 px wide, no cash recorded.
 
 - **Open the Update page.** Run `$S browser $RUN open "$($S url $RUN)/update"`.
-- **Invalid amount.** Choose `button "Record cash"` with the amount empty. The status reads `Enter the amount in CHF.`
+- **Invalid amount.** Choose record with the amount empty. Run `$S browser $RUN click "$($S ref $RUN 'button "Record cash"')"`. The status reads `Enter the amount in CHF.` and `$S sql $RUN "select count(*) from cash_withdrawals"` prints `0`.
 - **Record.** Run `$S browser $RUN fill "$($S ref $RUN 'textbox "Amount (CHF)"')" 200`, `$S browser $RUN fill "$($S ref $RUN 'textbox "Note"')" "ATM verify"`, `$S browser $RUN click "$($S ref $RUN 'button "Record cash"')"`, then `$S browser $RUN wait "cash recorded"`. The status reads `CHF 200 cash recorded.` and the list shows `"<today>"`, `" · ATM verify"`, `"CHF 200"` and `button "Delete <today> withdrawal"`.
 - **Stored.** `$S sql $RUN "select date, amount_chf, note from cash_withdrawals"` prints `<today>|200.0|ATM verify`.
 - **Spending, not net worth.** Open `/`. The current month reads `Spent in <Month> CHF 200` with `CHF 200 cash`, and the net worth total is unchanged from before the record.

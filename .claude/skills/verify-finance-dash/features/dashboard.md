@@ -35,7 +35,7 @@ Preconditions:
 
 ## Gotchas
 
-- `dash-curve` and `… since last month` need a snapshot from a previous month. A fresh instance only has today's, and no user path writes a past date, so both stay hidden: report them as not reachable from a fresh instance. To see them anyway, insert a prior-month row into the scratch database (`sqlite3 <db> "insert into nw_snapshots(snapshot_date, source, total_chf, available_chf, invested_chf, locked_chf, created_at) values ('2026-10-31','total',40000,0,0,0,'2026-10-31T00:00:00+00:00')"`, db path from `$S doctor $RUN`) and say in the proof that the history was seeded, not driven.
+- `dash-curve` and `… since last month` need a snapshot from a previous month. A fresh instance only has today's, and no user path writes a past date, so both stay hidden. Report `dash-curve` as not verified: precondition "a snapshot from an earlier month" cannot be created through the app in a fresh instance. Do not write rows into the database to get around it.
 - The sync never contacts a source here, so `Synced` stays `never` and no red dot appears. Real syncs, their errors and the Wise note are not verifiable in this stand-in.
 - USD amounts use the fallback rate 1.0 unless the instance was launched with `FD_VERIFY_ALLOW_FX=1`. Do not report USD figures as correct conversions without it.
 - The currency choice is stored server-side (`display_currency` setting) and survives reloads; restore CHF before driving other recipes that assert `CHF` amounts.
