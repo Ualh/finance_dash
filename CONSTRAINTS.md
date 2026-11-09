@@ -84,17 +84,18 @@ The 0.5-point margin absorbs drift when an unrelated change moves the total.
 |--------|-------|-----------|
 | Backend line coverage | 93.2% | must not fall |
 | Frontend line coverage | 100.0% | must not fall |
-| Known dependency vulnerabilities (osv-scanner) | 79 | must not grow |
+| Known dependency vulnerabilities (osv-scanner) | 4 | must not grow |
 | Semgrep findings (none at high or above) | 5 | must not grow |
 
 Backend coverage is `backend/` without its tests (`.coveragerc`). Frontend coverage covers only
 the files the node tests load. Update a value here when it improves. A drop is a finding.
 
-The two security rows come from the first CI run of `scripts/check task` (2026-11-08) and are
-compared by reading the CI log, not by a command. The 79 vulnerabilities are 2 critical, 39 high,
-33 medium and 5 low, in 28 packages. For Python, osv-scanner reads `requirements.txt`'s `>=` lower
-bounds as the versions, so those rows describe the oldest versions allowed, not the ones a fresh
-install picks. gitleaks found no leaks.
+The two security rows are read from the CI log of `scripts/check task` (semgrep 2026-11-08,
+osv-scanner 2026-11-09), not compared by a command. The 4 dependency vulnerabilities are all
+medium, in 3 frontend packages that have no fix short of a breaking major or no published fix at
+all. For Python, osv-scanner reads `requirements.txt`'s `>=` lower bounds as the versions, so those
+rows describe the oldest versions allowed, not the ones a fresh install picks. gitleaks found no
+leaks.
 
 ## Not covered yet
 
