@@ -6,12 +6,13 @@ Finpension has no API, so once a month the captain types the value shown in the 
 
 - `fin-save` stores a new Finpension value and confirms it.
 - `fin-hint` shows the current value as the field's placeholder.
-- `fin-invalid` refuses an entry that is not a number.
+- `fin-invalid` refuses an entry that does not start with a number.
 
 ## How to get to it (user POV)
 
 - On the Update page (`link "✏️ Update"` or `/update`), the `Finpension (CHF)` field under `This month`, then `button "Save"`.
 - From the Dashboard, choose the orange `link "Finpension …"` row (stale Finpension), which opens the Update page.
+- Once a value exists, Settings lists Finpension under `Manual Holdings` with its own `button "Edit"` (driven in [Other holdings](./other-holdings.md)).
 
 ## Driving it with control.sh
 
@@ -32,3 +33,4 @@ Preconditions:
 - `button "Save"` must match exactly; `button "Save holding"` further down is the Other holding form.
 - Saving again replaces the value; it never adds a second Finpension row.
 - The status line disappears on reload; screenshot it before navigating.
+- Only text that does not start with a number is refused: `42500abc` saves `42'500`, and zero or a negative value is saved as typed.

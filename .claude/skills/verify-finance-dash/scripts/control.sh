@@ -187,10 +187,18 @@ browser() {
   # binary (Chrome for Testing) aborts with "No usable sandbox" unless the sandbox is turned off.
   # The page is our own loopback app and everything else is unreachable through the dead proxy.
   [[ -n $exe && $(realpath "$exe") != /opt/google/chrome/* ]] && args+=" --no-sandbox"
-  CHROME_DEVTOOLS_AXI_SESSION=$browser_session \
-    CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH=$exe \
-    CHROME_DEVTOOLS_AXI_CHROME_ARGS=$args \
-    chrome-devtools-axi "$@"
+  # chrome-devtools-axi only lets `upload` read files under the directory it runs from, so an
+  # upload runs from the file's own directory and works for a file anywhere, such as the proof dir.
+  local dir=.
+  if [[ ${1:-} == upload ]]; then
+    [[ ${3:-} == /* && -f ${3:-} ]] || die "upload needs an absolute path to an existing file: upload <ref> <path>"
+    dir=$(dirname "$3")
+  fi
+  ( cd "$dir" &&
+    CHROME_DEVTOOLS_AXI_SESSION=$browser_session \
+      CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH=$exe \
+      CHROME_DEVTOOLS_AXI_CHROME_ARGS=$args \
+      chrome-devtools-axi "$@" )
 }
 
 ref() {

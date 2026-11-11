@@ -1,6 +1,6 @@
 # Other holdings
 
-Any account without an API (a fund, a pillar 3a, a foreign account) is added by hand on the Update page: a name, a category that decides whether it counts as available, invested or locked, an amount and a currency (converted to CHF). It then has its own row on the Dashboard, and its value can be edited later in Settings under `Manual Holdings`.
+Any account without an API (a fund, a pillar 3a, a foreign account) is added by hand on the Update page: a name, a category that decides whether it counts as available, invested or locked, an amount and a currency (converted to CHF). It then has its own row on the Dashboard, and its CHF value can be edited later in Settings under `Manual Holdings`. There is no way to delete a holding.
 
 ## Sub-features
 
@@ -23,15 +23,18 @@ Preconditions:
 
 - **Open the Update page.** Run `$S browser $RUN open "$($S url $RUN)/update"`.
 - **Missing name.** Choose save with every field empty. Run `$S browser $RUN click "$($S ref $RUN 'button "Save holding"')"`. The status reads `Please enter a name for the holding.`
-- **Add.** Run `$S browser $RUN fill "$($S ref $RUN 'textbox "Name"')" "Verify fund"`, `$S browser $RUN fill "$($S ref $RUN 'combobox "Category"')" "ETF / fund — invested"`, `$S browser $RUN fill "$($S ref $RUN 'textbox "Amount"')" 12000`, `$S browser $RUN click "$($S ref $RUN 'button "Save holding"')"`, then `$S browser $RUN wait "Saved"`. The status reads `Saved "Verify fund" — CHF 12'000.00.`
+- **Bad amount.** Run `$S browser $RUN fill "$($S ref $RUN 'textbox "Name"')" "Verify fund"`, `$S browser $RUN fill "$($S ref $RUN 'combobox "Category"')" "ETF / fund — invested"`, `$S browser $RUN fill "$($S ref $RUN 'textbox "Amount"')" abc` and save. The status reads `Please enter a valid amount.`
+- **Add.** Run `$S browser $RUN fill "$($S ref $RUN 'textbox "Amount"')" 12000`, `$S browser $RUN click "$($S ref $RUN 'button "Save holding"')"`, then `$S browser $RUN wait "Saved"`. The status reads `Saved "Verify fund" — CHF 12'000.00.`
 - **Stored.** `$S sql $RUN "select source, asset_class, value_chf, native_currency from holdings where label='Verify fund'"` prints `verify_fund|etf|12000.0|CHF`.
 - **Dashboard.** Open `/`. A `"Verify fund"` row shows today's date and `CHF 12'000`, and the total includes it.
-- **Edit in Settings.** Open `/settings` by URL: run `$S browser $RUN open "$($S url $RUN)/settings"`. `Manual Holdings` lists `"Verify fund"`, `"etf"`, `"verify_fund"` and the amount. Run `$S browser $RUN click "$($S ref $RUN 'button "Edit"')"`, `$S browser $RUN fill "$($S ref $RUN 'textbox value="12000"')" 15000` and `$S browser $RUN click "$($S ref $RUN 'button "Save"')"`. The row shows `15'000` and `$S sql $RUN "select value_chf from holdings where label='Verify fund'"` prints `15000.0`.
+- **Edit in Settings.** Open `/settings` by URL: run `$S browser $RUN open "$($S url $RUN)/settings"`. `Manual Holdings` lists `"Verify fund"`, `"etf"`, `"verify_fund"` and the amount, each followed by its own `button "Edit"`. Check in the snapshot that the first `button "Edit"` follows `"Verify fund"`, then run `$S browser $RUN click "$($S ref $RUN 'button "Edit"')"`, `$S browser $RUN fill "$($S ref $RUN 'textbox value="12000"')" 15000` and `$S browser $RUN click "$($S ref $RUN 'button "Save"')"`. The row shows `15'000` and `$S sql $RUN "select value_chf from holdings where label='Verify fund'"` prints `15000.0`.
 - **Proof.** The snapshot after `Save holding`, the `sql` read-back, the Dashboard row screenshot, and the Settings row before and after the edit.
 
 ## Gotchas
 
 - A non-CHF currency asks the FX service. With outbound blocked (the default) the status ends `(USD → CHF @ 1, stale rate)` and the CHF value equals the amount: that proves the fallback, not a real conversion. Launch with `FD_VERIFY_ALLOW_FX=1` to prove `hold-fx` with a live rate.
-- The holding's id is its name in lower case with underscores; saving the same name again replaces it instead of adding a second row.
+- The holding's id is its name in lower case with underscores; saving the exact same name again replaces it instead of adding a second row.
+- `Manual Holdings` also lists Finpension once a Finpension value exists, and lists the most recently saved holding first. `ref` returns the first `button "Edit"`, which is Verify fund's only while it is the newest; after any later save of another holding, the first `Edit` belongs to that one.
+- The Settings edit changes the CHF value only: a holding saved in USD keeps its old USD amount in `native_amount`.
 - In Settings the edit textbox has no label; `ref` finds it by role and current value as the snapshot prints them (`textbox value="12000"`).
 - Reach Settings by URL at phone width: the `Noter` pill covers the centre of the Settings tab.
