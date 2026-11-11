@@ -1,11 +1,11 @@
 # Cash withdrawals
 
-When the captain takes cash out, they record the amount, the date and an optional note on the Update page. The last five records are listed with a delete button. Cash counts as spent in its month (shown on the Dashboard as `CHF … cash`) but never changes net worth; a matching ATM debit within 3 days is counted once.
+When the captain takes cash out, they record the amount, the date and an optional note on the Update page. The five records with the latest dates are listed with a delete button. Cash counts as spent in its month (shown on the Dashboard as `CHF … cash`) but never changes net worth; when a Neon or Wise debit of the same amount lies within 3 days (such as the ATM withdrawal itself), the money is counted once.
 
 ## Sub-features
 
 - `cash-record` stores an amount, a date and a note.
-- `cash-list` shows the last five records, newest first.
+- `cash-list` shows the five records with the latest dates, latest first.
 - `cash-delete` removes a record.
 - `cash-invalid` refuses an empty, zero or non-numeric amount.
 - `cash-spending` adds the amount to that month's spending without changing net worth.
@@ -34,4 +34,5 @@ Preconditions:
 - To record another date, click `spinbutton "Month Month"` and `type MMDDYYYY`; `fill` on the date field does not reach the form.
 - Delete has no confirmation and is immediate.
 - Two records on the same date have the same button name; the first match is the newest.
-- The matching with ATM debits needs Neon or Wise rows within 3 days of the cash date; the June fixtures do not overlap today's date, so `cash-spending` here shows the cash alone.
+- The matching needs a Neon or Wise debit of the same amount within 3 days of the cash date; the June fixtures do not overlap today's date, so `cash-spending` here shows the cash alone.
+- The list is ordered by the withdrawal's date, not by when it was entered: a backdated record can fall outside the five shown.

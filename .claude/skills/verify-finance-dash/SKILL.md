@@ -90,7 +90,7 @@ $S browser $RUN wait "Finpension saved"
 
 - Every action prints a fresh accessibility snapshot. Refs like `@g7:4_5` are generation-tagged and go stale after the next action: look elements up with `ref` by role and accessible name, as the snapshot prints them (`button "Sync now"`, `textbox "Note"`, `link "⚙️ Settings"`).
 - Wait for text (`wait "<text>"`), never a fixed sleep.
-- File inputs: `upload <ref> <path>` on `button "Upload Neon CSV"` (the hidden file input).
+- File inputs: `upload <ref> <absolute path>` on `button "Upload Neon CSV"` (the hidden file input). `chrome-devtools-axi` only reads upload files under the directory it runs from, so the wrapper runs an upload from the file's own directory; called directly, an upload from elsewhere fails with `Access denied: path … is not within any of the configured workspace roots`.
 - Date fields: `fill` does not reach React. Click the field's month spinbutton (`spinbutton "Month Month"` on the Update page, `spinbutton "Month"` in Settings), then `type MMDDYYYY`.
 - Amounts render with a no-break space after the currency (`CHF\u00a01'350`). Never pass an amount inside a name to `ref`; match on the words, and read amounts back with `sql` or `api`.
 - At desktop width the bottom tab bar is hidden and there is no other menu: navigate with `open "$URL/update"` instead, and say so in the proof. At phone width the `Noter` pill covers the centre of the Settings tab, so open `/settings` by URL too.
