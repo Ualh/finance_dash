@@ -6,6 +6,13 @@
   color-scheme: light dark;
 }
 
+/* The Noter button (public/notes.js) rides above the phone tab bar, 4rem tall, shown below md. */
+@media (max-width: 767.98px) {
+  :root {
+    --ship-notes-lift: 4rem;
+  }
+}
+
 body {
   @apply text-slate-900 dark:text-slate-100;
 }

@@ -37,4 +37,4 @@ Preconditions:
 - `Manual Holdings` also lists Finpension once a Finpension value exists, and lists the most recently saved holding first. `ref` returns the first `button "Edit"`, which is Verify fund's only while it is the newest; after any later save of another holding, the first `Edit` belongs to that one.
 - The Settings edit changes the CHF value only: a holding saved in USD keeps its old USD amount in `native_amount`.
 - In Settings the edit textbox has no label; `ref` finds it by role and current value as the snapshot prints them (`textbox value="12000"`).
-- Reach Settings by URL at phone width: the `Noter` pill covers the centre of the Settings tab.
+- At phone width the Settings tab is reachable by click: the `Noter` pill rides above the tab bar.

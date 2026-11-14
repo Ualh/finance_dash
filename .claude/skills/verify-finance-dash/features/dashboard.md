@@ -39,4 +39,4 @@ Preconditions:
 - The sync never contacts a source here, so `Synced` stays `never` and no red dot appears. Real syncs, their errors and the Wise note are not verifiable in this stand-in.
 - USD amounts use the fallback rate 1.0 unless the instance was launched with `FD_VERIFY_ALLOW_FX=1`. Do not report USD figures as correct conversions without it.
 - The currency choice is stored server-side (`display_currency` setting) and survives reloads; restore CHF before driving other recipes that assert `CHF` amounts. A freshly loaded page shows CHF until the stored choice arrives, with `button "CHF"` disabled, so a click on it right after a reload does nothing. Wait for `$` before choosing CHF, or restore on the page where you chose USD.
-- At phone width the floating `Noter` pill covers the centre of `link "⚙️ Settings"`: a click on that tab opens the notes panel instead. Open `/settings` by URL and record that you did.
+- At phone width the floating `Noter` pill rides above the tab bar, so `link "⚙️ Settings"` is clickable.
