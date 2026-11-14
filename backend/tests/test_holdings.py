@@ -120,6 +120,31 @@ class TestAddHoldingEndpoint:
         assert data["buckets"]["locked"] == 3000.0
 
 
+class TestEditHoldingEndpoint:
+
+    def test_editing_usd_holding_refreshes_its_usd_amount(self, client):
+        app.state.repository.put_fx_rate("USD", "CHF", "2026-06-16", 0.90)
+        app.state.repository.put_fx_rate("CHF", "USD", "2026-06-16", 1.25)
+        with freeze_time("2026-06-16 12:00:00"):
+            added = client.post(
+                "/holdings",
+                json={"label": "IBKR", "asset_class": "stock", "amount": 1000, "currency": "USD"},
+            ).json()["holding"]
+            resp = client.put(f"/holdings/{added['id']}", json={"value_chf": 1800})
+        holding = resp.json()["holding"]
+        assert holding["value_chf"] == 1800.0
+        assert holding["native_currency"] == "USD"
+        assert holding["native_amount"] == 2250.0
+
+    def test_editing_chf_holding_keeps_native_amount_in_step(self, client):
+        added = client.post(
+            "/holdings",
+            json={"label": "Hard wallet", "asset_class": "crypto", "amount": 500, "currency": "CHF"},
+        ).json()["holding"]
+        holding = client.put(f"/holdings/{added['id']}", json={"value_chf": 750}).json()["holding"]
+        assert holding["native_amount"] == 750.0
+
+
 class TestAnchorSettingRegression:
     """Setting the Neon anchor via PUT /settings must not 500 (was AttributeError)."""
 

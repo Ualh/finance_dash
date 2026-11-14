@@ -192,12 +192,13 @@ class SQLiteRepository:
         ).fetchone()
         return dict(row) if row else None
 
-    def update_holding_value(self, holding_id: int, value_chf: float) -> Optional[dict]:
+    def update_holding_value(self, holding_id: int, value_chf: float,
+                             native_amount: Optional[float] = None) -> Optional[dict]:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         cursor = self._connection.cursor()
         cursor.execute(
-            "UPDATE holdings SET value_chf = ?, last_updated = ? WHERE id = ?",
-            (value_chf, now, holding_id),
+            "UPDATE holdings SET value_chf = ?, native_amount = COALESCE(?, native_amount), last_updated = ? WHERE id = ?",
+            (value_chf, native_amount, now, holding_id),
         )
         if cursor.rowcount == 0:
             return None

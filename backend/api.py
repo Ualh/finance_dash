@@ -329,9 +329,13 @@ def update_holding_value(
     body: HoldingUpdateInput,
     repo: Annotated[SQLiteRepository, Depends(get_repository)],
 ) -> dict:
-    holding = repo.update_holding_value(holding_id, body.value_chf)
-    if holding is None:
+    existing = repo.get_holding(holding_id)
+    if existing is None:
         raise HTTPException(404, "Holding not found")
+    native_amount = None
+    if existing["source_type"] == "manual" and existing["native_currency"]:
+        native_amount = fx_convert(repo, body.value_chf, existing["native_currency"])["amount"]
+    holding = repo.update_holding_value(holding_id, body.value_chf, native_amount)
     record_snapshot(repo)
     return {"holding": holding}
 
