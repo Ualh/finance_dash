@@ -1,6 +1,7 @@
 // Observations: a "Noter" button for any app on the tailnet. One tag embeds it:
 //   <script src="http://100.127.215.65:8096/notes.js" data-app="Books"></script>
 // A copy the app serves itself names the service's origin instead: data-endpoint="http://100.127.215.65:8096".
+// An app with its own bar along the bottom lifts the button above it: :root{--ship-notes-lift:64px}.
 // The note goes to firstmate with the app's name and the page it was written on.
 (function () {
   "use strict";
@@ -18,7 +19,7 @@
     "*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif}" +
     "[hidden]{display:none!important}" +
     ".pill,.sheet{position:fixed;z-index:2147483647;right:max(16px,env(safe-area-inset-right))}" +
-    ".pill{bottom:max(16px,env(safe-area-inset-bottom));border:0;border-radius:999px;padding:0 16px;height:40px;" +
+    ".pill{bottom:calc(max(16px,env(safe-area-inset-bottom)) + var(--ship-notes-lift,0px));border:0;border-radius:999px;padding:0 16px;height:40px;" +
     "font-size:14px;font-weight:500;color:#fff;background:rgba(29,29,31,.62);cursor:pointer;opacity:.75;" +
     "-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 2px 10px rgba(0,0,0,.16);" +
     "transition:opacity .15s}" +
