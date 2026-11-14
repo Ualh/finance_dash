@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useApiClient } from "@/hooks/useApiClient";
 import { Button } from "@/components/ui/Button";
+import { parsePositiveAmount } from "@/lib/amount";
 import { formatMoney } from "@/lib/format";
 import type { CashWithdrawal } from "@/lib/types";
 
@@ -74,11 +75,12 @@ const UpdatePage: React.FC = () => {
 
   const handleFinpension = async (e: React.FormEvent) => {
     e.preventDefault();
-    const num = parseFloat(finpension);
-    if (isNaN(num)) {
-      setFinpensionStatus({ ok: false, msg: "Enter the value in CHF." });
+    const amount = parsePositiveAmount(finpension);
+    if (!amount.ok) {
+      setFinpensionStatus({ ok: false, msg: amount.message });
       return;
     }
+    const num = amount.value;
     setFinpensionSaving(true);
     setFinpensionStatus(null);
     try {
@@ -95,11 +97,12 @@ const UpdatePage: React.FC = () => {
 
   const handleCash = async (e: React.FormEvent) => {
     e.preventDefault();
-    const num = parseFloat(cashAmount);
-    if (isNaN(num) || num <= 0) {
-      setCashStatus({ ok: false, msg: "Enter the amount in CHF." });
+    const amount = parsePositiveAmount(cashAmount);
+    if (!amount.ok) {
+      setCashStatus({ ok: false, msg: amount.message });
       return;
     }
+    const num = amount.value;
     setCashSaving(true);
     setCashStatus(null);
     try {
@@ -127,15 +130,16 @@ const UpdatePage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const num = parseFloat(hAmount);
+    const amount = parsePositiveAmount(hAmount);
     if (!hLabel.trim()) {
       setStatus({ ok: false, msg: "Please enter a name for the holding." });
       return;
     }
-    if (isNaN(num)) {
-      setStatus({ ok: false, msg: "Please enter a valid amount." });
+    if (!amount.ok) {
+      setStatus({ ok: false, msg: amount.message });
       return;
     }
+    const num = amount.value;
     setSubmitting(true);
     setStatus(null);
     try {

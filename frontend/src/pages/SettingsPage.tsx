@@ -5,6 +5,7 @@ import { useDisplayCurrency } from "@/context/DisplayCurrencyContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useApiClient } from "@/hooks/useApiClient";
 import { Button } from "@/components/ui/Button";
+import { parsePositiveAmount } from "@/lib/amount";
 
 const SettingsPage: React.FC = () => {
   const { currency } = useDisplayCurrency();
@@ -24,6 +25,7 @@ const SettingsPage: React.FC = () => {
   const [editId, setEditId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [anchorDate, setAnchorDate] = useState("");
   const [anchorAmount, setAnchorAmount] = useState("");
@@ -114,24 +116,30 @@ const SettingsPage: React.FC = () => {
   const handleEditStart = (h: { id: number; value_chf: number }) => {
     setEditId(h.id);
     setEditValue(String(h.value_chf));
+    setEditError(null);
   };
 
   const handleEditCancel = () => {
     setEditId(null);
     setEditValue("");
+    setEditError(null);
   };
 
   const handleEditSave = async (holdingId: number) => {
-    const num = parseFloat(editValue);
-    if (isNaN(num)) return;
+    const amount = parsePositiveAmount(editValue);
+    if (!amount.ok) {
+      setEditError(amount.message);
+      return;
+    }
     setSavingId(holdingId);
+    setEditError(null);
     try {
-      await api.updateHolding(holdingId, num);
+      await api.updateHolding(holdingId, amount.value);
       setEditId(null);
       setEditValue("");
       await loadHoldings();
-    } catch {
-      // ignore
+    } catch (err) {
+      setEditError((err as Error).message);
     } finally {
       setSavingId(null);
     }
@@ -318,6 +326,9 @@ const SettingsPage: React.FC = () => {
                 </li>
               ))}
             </ul>
+          )}
+          {editError && (
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">{editError}</p>
           )}
         </div>
 
