@@ -14,3 +14,12 @@ def test_index_embeds_notes_widget_before_body_end():
 
 def test_notes_widget_is_served_from_app_static_files():
     assert (FRONTEND / "public" / "notes.js").is_file()
+
+
+BUBBLE_TAG = '<script src="http://monitor.home/widget.js" defer></script>'
+
+
+def test_index_embeds_the_llm_monitor_bubble_before_body_end():
+    html = (FRONTEND / "index.html").read_text()
+    assert html.count(BUBBLE_TAG) == 1
+    assert html.index(BUBBLE_TAG) < html.index("</body>")

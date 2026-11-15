@@ -29,7 +29,7 @@ const App: React.FC = () => {
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
-        <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-20 pl-32 border-t border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
           <div className="flex">
             {tabs.map((tab) => (
               <NavLink
