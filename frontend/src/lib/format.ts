@@ -16,10 +16,14 @@ export function formatChange(amount: number, currency = "CHF"): string {
   return `${sign}${formatMoney(Math.abs(rounded), currency)}`;
 }
 
-/** "2026-11" → "Nov". */
-export function formatMonthShort(month: string): string {
-  const [year, mon] = month.split("-").map(Number);
-  return new Date(Date.UTC(year, mon - 1, 1)).toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+/** A UTC timestamp → "Nov". */
+export function formatMonthShort(at: number): string {
+  return new Date(at).toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+}
+
+/** A UTC timestamp → "2026". */
+export function formatYear(at: number): string {
+  return String(new Date(at).getUTCFullYear());
 }
 
 /** "2026-11" → "November 2026". */

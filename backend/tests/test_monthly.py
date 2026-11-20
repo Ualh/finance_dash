@@ -218,6 +218,14 @@ class TestCurveFollowsEveryChange:
         ]
         assert d["change_since_last_month"]["amount_chf"] == 1_500.0
 
+    def test_history_reaches_back_to_the_first_snapshot(self, client):
+        for day, total in [("2022-01-28", 100.0), ("2024-06-30", 2_000.0), ("2026-10-31", 40_000.0)]:
+            repo().upsert_snapshot(day, "total", total, total, 0.0, 0.0)
+        with freeze_time("2026-11-20 08:00:00"):
+            d = client.get("/dashboard").json()
+        assert [p["month"] for p in d["history"]] == ["2022-01", "2024-06", "2026-10", "2026-11"]
+        assert d["history"][0] == {"month": "2022-01", "date": "2022-01-28", "total_chf": 100.0}
+
     def test_neon_upload_writes_todays_snapshot(self, client):
         with freeze_time("2026-06-26 09:00:00"):
             upload_neon(client)
