@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { daysAgo, formatChange, formatDay, formatMoment, formatMonthLong, formatMonthShort } from "./format.ts";
+import { daysAgo, formatChange, formatDay, formatMoment, formatMonthLong, formatMonthShort, formatYear } from "./format.ts";
 
 const strip = (s: string) => s.replace(/[\s  ’']/g, "");
 
@@ -12,7 +12,8 @@ test("change always carries its sign", () => {
 });
 
 test("month labels", () => {
-  assert.equal(formatMonthShort("2026-11"), "Nov");
+  assert.equal(formatMonthShort(Date.UTC(2026, 10, 1)), "Nov");
+  assert.equal(formatYear(Date.UTC(2023, 0, 1)), "2023");
   assert.equal(formatMonthLong("2026-01"), "January 2026");
 });
 

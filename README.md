@@ -41,7 +41,8 @@ view everything through a clean React dashboard.
 ```
 
 The dashboard is one screen: net worth, the change since the end of last month,
-the month-by-month curve, each source with the date its figure is valid for
+the month-by-month curve from the first recorded month to today (on a time axis, so
+months without a snapshot keep their width), each source with the date its figure is valid for
 (orange when older than 35 days), and what was spent this month and last month.
 
 ## Data sources

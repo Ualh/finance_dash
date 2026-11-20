@@ -7,38 +7,53 @@ import { useApiClient } from "@/hooks/useApiClient";
 import { useDisplayCurrency } from "@/context/DisplayCurrencyContext";
 import { CurrencyToggle } from "@/components/CurrencyToggle";
 import { DataState } from "@/components/DataState";
-import { daysAgo, formatChange, formatDay, formatMoment, formatMoney, formatMonthLong, formatMonthShort } from "@/lib/format";
+import { curveAxis, toCurvePoints, type CurvePoint } from "@/lib/curve";
+import { daysAgo, formatChange, formatDay, formatMoment, formatMoney, formatMonthLong, formatMonthShort, formatYear } from "@/lib/format";
 import type { DashboardResponse, MonthPoint, SourceInfo } from "@/lib/types";
 
-const Curve: React.FC<{ points: MonthPoint[]; currency: string }> = ({ points, currency }) => (
-  <div className="h-44 w-full">
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={points} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
-        <defs>
-          <linearGradient id="nw-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <XAxis
-          dataKey="month"
-          tickFormatter={formatMonthShort}
-          tickLine={false}
-          axisLine={false}
-          interval="preserveStartEnd"
-          tick={{ fontSize: 12, fill: "#94a3b8" }}
-        />
-        <YAxis hide domain={["dataMin", "dataMax"]} />
-        <Tooltip
-          formatter={(value: number) => [formatMoney(value, currency), "Net worth"]}
-          labelFormatter={(month: string) => formatMonthLong(month)}
-          contentStyle={{ borderRadius: 8, fontSize: 13 }}
-        />
-        <Area type="monotone" dataKey="total_chf" stroke="#2563eb" strokeWidth={2} fill="url(#nw-fill)" />
-      </AreaChart>
-    </ResponsiveContainer>
-  </div>
-);
+/** Net worth since the first recorded month, on a time axis so months without data keep their width. */
+const Curve: React.FC<{ history: MonthPoint[]; currency: string }> = ({ history, currency }) => {
+  const points = toCurvePoints(history);
+  const axis = curveAxis(points);
+  return (
+    <div>
+      <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Since {formatMonthLong(points[0].month)}</p>
+      <div className="h-44 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={points} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
+            <defs>
+              <linearGradient id="nw-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#2563eb" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="at"
+              type="number"
+              scale="time"
+              domain={["dataMin", "dataMax"]}
+              ticks={axis.ticks}
+              tickFormatter={axis.byYear ? formatYear : formatMonthShort}
+              tickLine={false}
+              axisLine={false}
+              tick={{ fontSize: 12, fill: "#94a3b8" }}
+            />
+            <YAxis hide domain={["dataMin", "dataMax"]} />
+            <Tooltip
+              formatter={(value: number) => [formatMoney(value, currency), "Net worth"]}
+              labelFormatter={(_at: number, payload) => {
+                const point = payload[0]?.payload as CurvePoint | undefined;
+                return point ? formatMonthLong(point.month) : "";
+              }}
+              contentStyle={{ borderRadius: 8, fontSize: 13 }}
+            />
+            <Area type="monotone" dataKey="total_chf" stroke="#2563eb" strokeWidth={2} fill="url(#nw-fill)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
 
 const SourceRow: React.FC<{ info: SourceInfo; currency: string; year: number }> = ({ info, currency, year }) => {
   const date = info.as_of ? formatDay(info.as_of, year) : "Never";
@@ -202,7 +217,7 @@ const DashboardPage: React.FC = () => {
               </div>
               {data.history.length > 1 && (
                 <div className="mt-4">
-                  <Curve points={data.history} currency={cur} />
+                  <Curve history={data.history} currency={cur} />
                 </div>
               )}
             </section>
