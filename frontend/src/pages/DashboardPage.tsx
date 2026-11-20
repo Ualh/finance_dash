@@ -7,14 +7,45 @@ import { useApiClient } from "@/hooks/useApiClient";
 import { useDisplayCurrency } from "@/context/DisplayCurrencyContext";
 import { CurrencyToggle } from "@/components/CurrencyToggle";
 import { DataState } from "@/components/DataState";
-import { curveAxis, toCurvePoints, type CurvePoint } from "@/lib/curve";
-import { daysAgo, formatChange, formatDay, formatMoment, formatMoney, formatMonthLong, formatMonthShort, formatYear } from "@/lib/format";
-import type { DashboardResponse, MonthPoint, SourceInfo } from "@/lib/types";
+import { curveAxis, gapsSince, missingLabels, toCurvePoints, type CurvePoint } from "@/lib/curve";
+import {
+  daysAgo,
+  formatChange,
+  formatDay,
+  formatGap,
+  formatMoment,
+  formatMoney,
+  formatMonthLong,
+  formatMonthShort,
+  formatYear,
+} from "@/lib/format";
+import type { DashboardResponse, HistoryGap, MonthPoint, SourceInfo } from "@/lib/types";
 
-/** Net worth since the first recorded month, on a time axis so months without data keep their width. */
-const Curve: React.FC<{ history: MonthPoint[]; currency: string }> = ({ history, currency }) => {
+/** The hovered month: its value (or that it is unknown), whether it was rebuilt, and which accounts it leaves out. */
+const CurveTooltip: React.FC<{ point?: CurvePoint; gaps: HistoryGap[]; currency: string }> = ({ point, gaps, currency }) => {
+  if (!point) return null;
+  const missing = missingLabels(point, gaps);
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <p className="text-slate-500 dark:text-slate-400">{formatMonthLong(point.month)}</p>
+      <p className="font-medium tabular-nums text-slate-900 dark:text-slate-50">
+        {point.total_chf === null ? "Unknown" : formatMoney(point.total_chf, currency)}
+      </p>
+      {point.reconstructed && <p className="text-xs text-slate-500 dark:text-slate-400">Rebuilt from past activity</p>}
+      {missing.length > 0 && <p className="text-xs text-amber-600 dark:text-amber-400">Without {missing.join(", ")}</p>}
+    </div>
+  );
+};
+
+/**
+ * Net worth since the earliest month any account can be rebuilt for, on a time axis so months without data keep
+ * their width. Rebuilt months are dashed; months nothing is known for leave a hole.
+ */
+const Curve: React.FC<{ history: MonthPoint[]; gaps: HistoryGap[]; currency: string }> = ({ history, gaps, currency }) => {
   const points = toCurvePoints(history);
   const axis = curveAxis(points);
+  const rebuilt = points.some((p) => p.reconstructed);
+  const notCounted = gapsSince(gaps, points[0].date);
   return (
     <div>
       <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Since {formatMonthLong(points[0].month)}</p>
@@ -40,17 +71,29 @@ const Curve: React.FC<{ history: MonthPoint[]; currency: string }> = ({ history,
             />
             <YAxis hide domain={["dataMin", "dataMax"]} />
             <Tooltip
-              formatter={(value: number) => [formatMoney(value, currency), "Net worth"]}
-              labelFormatter={(_at: number, payload) => {
-                const point = payload[0]?.payload as CurvePoint | undefined;
-                return point ? formatMonthLong(point.month) : "";
-              }}
-              contentStyle={{ borderRadius: 8, fontSize: 13 }}
+              filterNull={false}
+              content={({ payload }) => (
+                <CurveTooltip point={payload?.[0]?.payload as CurvePoint | undefined} gaps={gaps} currency={currency} />
+              )}
             />
-            <Area type="monotone" dataKey="total_chf" stroke="#2563eb" strokeWidth={2} fill="url(#nw-fill)" />
+            <Area type="monotone" dataKey="dashed" stroke="#2563eb" strokeWidth={2} strokeDasharray="4 4" fill="url(#nw-fill)" />
+            <Area type="monotone" dataKey="solid" stroke="#2563eb" strokeWidth={2} fill="url(#nw-fill)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      {(rebuilt || notCounted.length > 0) && (
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          {rebuilt && "Dashed: rebuilt from past activity. "}
+          {notCounted.length > 0 && "Not counted: "}
+          {notCounted.map((gap, i) => (
+            <span key={`${gap.source}-${gap.start}`} title={gap.reason}>
+              {i > 0 && " · "}
+              {formatGap(gap)}
+            </span>
+          ))}
+          {notCounted.length > 0 && "."}
+        </p>
+      )}
     </div>
   );
 };
@@ -217,7 +260,7 @@ const DashboardPage: React.FC = () => {
               </div>
               {data.history.length > 1 && (
                 <div className="mt-4">
-                  <Curve history={data.history} currency={cur} />
+                  <Curve history={data.history} gaps={data.history_gaps} currency={cur} />
                 </div>
               )}
             </section>

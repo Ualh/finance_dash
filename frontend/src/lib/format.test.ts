@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { daysAgo, formatChange, formatDay, formatMoment, formatMonthLong, formatMonthShort, formatYear } from "./format.ts";
+import { daysAgo, formatChange, formatDay, formatMoment, formatGap, formatMonthLong, formatMonthShort, formatMonthYear, formatYear } from "./format.ts";
 
 const strip = (s: string) => s.replace(/[\s  ’']/g, "");
 
@@ -15,6 +15,8 @@ test("month labels", () => {
   assert.equal(formatMonthShort(Date.UTC(2026, 10, 1)), "Nov");
   assert.equal(formatYear(Date.UTC(2023, 0, 1)), "2023");
   assert.equal(formatMonthLong("2026-01"), "January 2026");
+  assert.equal(formatMonthYear("2023-01-15"), "Jan 2023");
+  assert.equal(formatMonthYear("2026-11"), "Nov 2026");
 });
 
 test("day labels show the year only when it differs", () => {
@@ -29,4 +31,12 @@ test("moments read as today, yesterday, or a day", () => {
   assert.equal(formatMoment(new Date(2026, 5, 26, 9, 0).toISOString(), now), "26 Jun");
   assert.equal(formatMoment(new Date(2025, 11, 31, 9, 0).toISOString(), now), "31 Dec 2025");
   assert.equal(daysAgo(new Date(2026, 9, 1, 8, 0).toISOString(), now), 34);
+});
+
+test("gaps read as month ranges", () => {
+  const gap = (start: string | null, end: string | null) => ({ source: "x", label: "Wise", start, end, reason: "" });
+  assert.equal(formatGap(gap(null, "2026-04-30")), "Wise until Apr 2026");
+  assert.equal(formatGap(gap("2023-01-15", "2024-03-25")), "Wise Jan 2023 – Mar 2024");
+  assert.equal(formatGap(gap("2025-12-04", null)), "Wise from Dec 2025");
+  assert.equal(formatGap(gap(null, null)), "Wise");
 });

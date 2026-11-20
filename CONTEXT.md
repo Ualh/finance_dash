@@ -40,6 +40,23 @@ A runtime classification of each Holding into **Disponible** (available),
 **Investi** (invested), or **Bloqué** (locked), derived from `asset_class`.
 Never persisted.
 
+### History
+
+**Recorded snapshot**:
+An account's value on a day, written by the app itself whenever something changes (upload,
+manual value, sync). Ground truth; never replaced.
+
+**Reconstructed point**:
+An account's month-end value rebuilt from stored past activity, for months before the app
+recorded that account. Stored flagged `reconstructed`; drawn dashed on the curve.
+_Avoid_: estimate, backfilled snapshot.
+
+**Gap**:
+A stretch of days an account's value cannot be rebuilt for, because the stored activity cannot
+explain it. Listed under the curve; the months it covers leave that account out, and a month
+every account misses is a hole in the curve.
+_Avoid_: missing data, hole (for the stretch itself).
+
 ### Monthly ritual
 
 **Stale**:

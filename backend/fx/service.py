@@ -33,6 +33,16 @@ class FrankfurterClient:
             return None
 
 
+    def fetch_series(self, base: str, quote: str, start: str, end: str) -> dict[str, float]:
+        """Daily rates between two days, keyed by publication day; empty when the ECB does not quote `base`."""
+        resp = requests.get(f"{self._base_url}/{start}..{end}", params={"base": base, "symbols": quote},
+                            timeout=self._timeout)
+        if resp.status_code == 404:
+            return {}
+        resp.raise_for_status()
+        return {day: float(rates[quote]) for day, rates in resp.json()["rates"].items() if quote in rates}
+
+
 def get_fx_rate(repo: SQLiteRepository, base: str, quote: str, client: Optional[FrankfurterClient] = None) -> dict:
     today = date.today().isoformat()
     cached = repo.get_cached_fx_rate(base, quote, today)

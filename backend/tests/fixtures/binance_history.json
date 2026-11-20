@@ -1,0 +1,34 @@
+{
+  "_story": "USD 500 in (spent as BUSD), BTC bought, withdrawn; an unrecorded 0.02 BTC arrives before 2022-03-01 and an unrecorded 0.03 BTC leaves after 2022-04-01, so neither walk explains March. Snapshot on 2022-07-15.",
+  "fiat_deposits": [
+    {"occurred_at": "2022-01-10T09:00:00+00:00", "payload": {"orderNo": "fd1", "fiatCurrency": "USD", "amount": "500", "indicatedAmount": "500", "totalFee": "0", "status": "Successful", "createTime": 1641805200000}}
+  ],
+  "converts": [
+    {"occurred_at": "2022-01-11T09:00:00+00:00", "payload": {"orderId": 1, "fromAsset": "BUSD", "fromAmount": "400", "toAsset": "BTC", "toAmount": "0.01", "orderStatus": "SUCCESS", "createTime": 1641891600000}},
+    {"occurred_at": "2022-06-01T09:00:00+00:00", "payload": {"orderId": 2, "fromAsset": "USDT", "fromAmount": "10", "toAsset": "RNDR", "toAmount": "5", "orderStatus": "SUCCESS", "createTime": 1654074000000}}
+  ],
+  "fiat_buys": [
+    {"occurred_at": "2022-01-12T09:00:00+00:00", "payload": {"orderNo": "fb1", "cryptoCurrency": "ETH", "fiatCurrency": "CHF", "obtainAmount": "1.0", "sourceAmount": "3000", "status": "Failed", "createTime": 1641978000000}}
+  ],
+  "withdrawals": [
+    {"occurred_at": "2022-02-05T09:00:00+00:00", "payload": {"id": "w1", "coin": "BTC", "amount": "0.004", "transactionFee": "0.0001", "status": 6, "applyTime": "2022-02-05 09:00:00"}},
+    {"occurred_at": "2022-02-06T09:00:00+00:00", "payload": {"id": "w2", "coin": "ETH", "amount": "5", "transactionFee": "0.01", "status": 3, "applyTime": "2022-02-06 09:00:00"}},
+    {"occurred_at": "2022-03-01T09:00:00+00:00", "payload": {"id": "w3", "coin": "BTC", "amount": "0.02", "transactionFee": "0", "status": 6, "applyTime": "2022-03-01 09:00:00"}}
+  ],
+  "deposits": [
+    {"occurred_at": "2022-04-01T09:00:00+00:00", "payload": {"id": "d1", "coin": "BTC", "amount": "0.03", "status": 1, "insertTime": 1648803600000}}
+  ],
+  "trades": [
+    {"occurred_at": "2022-05-02T09:00:00+00:00", "payload": {"symbol": "BTCUSDT", "id": 7, "qty": "0.005", "quoteQty": "150", "commission": "0.15", "commissionAsset": "USDT", "isBuyer": false, "time": 1651482000000}}
+  ],
+  "spot_snapshots": [
+    {"occurred_at": "2022-07-15T23:59:59+00:00", "payload": {"type": "spot", "updateTime": 1657929599000, "data": {"totalAssetOfBtc": "0.012", "balances": [
+      {"asset": "BTC", "free": "0.0005", "locked": "0"},
+      {"asset": "LDBTC", "free": "0.0004", "locked": "0"},
+      {"asset": "USDT", "free": "139.85", "locked": "0"},
+      {"asset": "BUSD", "free": "100", "locked": "0"},
+      {"asset": "RENDER", "free": "5", "locked": "0"},
+      {"asset": "XYZ", "free": "3", "locked": "0"}
+    ]}}}
+  ]
+}
