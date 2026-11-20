@@ -25,7 +25,23 @@ export interface FxInfo {
 export interface MonthPoint {
   month: string;
   date: string;
-  total_chf: number;
+  /** Null when no account's value is known that month: a hole in the curve. */
+  total_chf: number | null;
+  /** Part of the value was rebuilt from past activity rather than recorded by the app. */
+  reconstructed: boolean;
+  /** Sources whose value that day is unknown (in a gap), so not counted. */
+  missing: string[];
+}
+
+/** A stretch of days a source's value could not be rebuilt for. */
+export interface HistoryGap {
+  source: string;
+  label: string;
+  /** First unknown day; null: since the beginning. */
+  start: string | null;
+  /** Last unknown day; null: still unknown. */
+  end: string | null;
+  reason: string;
 }
 
 export interface MonthSpending {
@@ -43,6 +59,7 @@ export interface DashboardResponse {
   };
   change_since_last_month: { amount_chf: number; since: string; pct: number | null } | null;
   history: MonthPoint[];
+  history_gaps: HistoryGap[];
   spending: MonthSpending[];
   sources: Record<string, SourceInfo>;
   stale_after_days: number;

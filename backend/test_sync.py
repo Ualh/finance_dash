@@ -128,8 +128,8 @@ class TestSyncAll:
         # Compared with the last snapshot of May, not with yesterday.
         assert d["change_since_last_month"] == {"amount_chf": 20_000.0, "since": "2026-05-31", "pct": 20.0}
         assert d["history"] == [
-            {"month": "2026-05", "date": "2026-05-31", "total_chf": 100_000.0},
-            {"month": "2026-06", "date": "2026-06-16", "total_chf": 120_000.0},
+            {"month": "2026-05", "date": "2026-05-31", "total_chf": 100_000.0, "reconstructed": False, "missing": []},
+            {"month": "2026-06", "date": "2026-06-16", "total_chf": 120_000.0, "reconstructed": False, "missing": []},
         ]
 
     def test_dashboard_change_is_null_without_a_previous_month(self, client):

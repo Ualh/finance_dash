@@ -36,13 +36,15 @@ view everything through a clean React dashboard.
                            │  cash_withdrawals, fx_rates,  │
                            │  sync_log, settings,          │
                            │  history_records,             │
-                           │  history_cursors              │
+                           │  history_cursors,             │
+                           │  history_gaps                 │
                            └──────────────────────────────┘
 ```
 
 The dashboard is one screen: net worth, the change since the end of last month,
-the month-by-month curve from the first recorded month to today (on a time axis, so
-months without a snapshot keep their width), each source with the date its figure is valid for
+the month-by-month curve from the earliest month any account can be rebuilt for to today (on a
+time axis, so months without a snapshot keep their width; rebuilt months are dashed and months
+nothing is known for leave a hole), each source with the date its figure is valid for
 (orange when older than 35 days), and what was spent this month and last month.
 
 ## Data sources
@@ -92,7 +94,7 @@ exits 1 if any dataset failed; the others still run.
 
 Rows are kept as the provider sent them in `history_records` (one row per source,
 dataset and record id), with the resume position of each dataset in
-`history_cursors`. The dashboard does not chart them yet.
+`history_cursors`. Every run ends by rebuilding the reconstructed past from them (below).
 
 | Source | What is read | How far back |
 |--------|--------------|--------------|
@@ -111,6 +113,38 @@ What stays out of reach:
   at least once a month to keep the daily series unbroken.
 - **Binance trades on delisted pairs**: trades are read per pair, and only pairs
   still listed (whose two assets appear in your history or balances) can be asked for.
+
+### Reconstructed past (the curve before the first snapshot)
+
+The app records a snapshot only from the day a source is connected. For the months before,
+each account's month-end value is rebuilt from the stored activity and stored in
+`nw_snapshots` with `reconstructed = 1`, next to the recorded rows and never over them. The
+curve adds a rebuilt value only for a source that month's recorded snapshot did not cover,
+draws rebuilt months dashed, and names in the tooltip the accounts a month leaves out.
+
+| Account | How it is rebuilt | Where it cannot be |
+|---------|-------------------|--------------------|
+| Neon | Anchor + transactions up to each month-end, the live balance's rule | Before the anchor date |
+| Binance | Walked backward from the earliest stored daily balance snapshot, undoing every stored flow; before that, replayed forward from the empty account at its first activity. Valued at each asset's monthly close on Binance (USDT pair) and the ECB USD/CHF rate (Frankfurter), cached in `fx_rates` | Where neither walk holds up: an asset would be short by more than a dollar, so trades or transfers are missing (the API serves trades only for pairs still listed) |
+| Wise | Activity feed replayed forward from zero, per currency, a day at a time | From the first day a balance would go below zero, or a payment the feed does not split by balance, until the first sync: the feed does not say which transfers were paid from the balance |
+
+A stretch that cannot be rebuilt is stored in `history_gaps`, listed under the curve
+("Not counted: …") and left out of the months it covers; a month no account is known for is a
+hole in the curve. Coins Binance quotes no price for are left out and named in the output.
+Airdrops and Earn interest are not in the activity, so the backward walk counts them a little
+early.
+
+The rebuild needs no credentials, only Binance's public klines and Frankfurter. It runs at the
+end of every backfill; to run it alone (after uploading an older Neon statement, moving the
+Neon anchor, or deploying a change to it):
+
+```bash
+.venv/bin/python -m backend.history --reconstruct-only
+```
+
+It prints one line per account (months rebuilt, gaps, coins without a price) and replaces the
+previous reconstruction in one transaction; if a rate it needs cannot be fetched, it keeps the
+previous one and exits 1.
 
 ### Getting the keys
 
@@ -189,7 +223,9 @@ systemctl --user restart finance-dash.service
 ```
 
 Run `.venv/bin/pip install -r requirements.txt` before the restart when
-`requirements.txt` changed, and restart after any `.env` change. Leave
+`requirements.txt` changed, and restart after any `.env` change. When the change touches
+the reconstructed past (`backend/history/reconstruct.py`), rebuild it after the restart:
+`.venv/bin/python -m backend.history --reconstruct-only`. Leave
 `VITE_API_BASE_URL` unset (or empty) for the build so the page calls the host
 it was loaded from. Check the service with
 `systemctl --user status finance-dash.service` and
@@ -276,7 +312,7 @@ finance_dash/
 │   ├── fx/              # FX rate service
 │   ├── sources/         # Binance, Wise, IBKR adapters
 │   ├── sync/            # Sync engine (automatic sources)
-│   ├── history/         # Past-data backfill (python -m backend.history)
+│   ├── history/         # Past-data backfill and reconstructed past (python -m backend.history)
 │   ├── snapshots.py     # Daily snapshots + monthly curve
 │   ├── freshness.py     # Per-source age, stale list for the reminder
 │   ├── spending.py      # Monthly spending, cash matched once

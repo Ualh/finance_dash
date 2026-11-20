@@ -1,9 +1,13 @@
-import type { MonthPoint } from "./types";
+import type { HistoryGap, MonthPoint } from "./types";
 
 /** A month-end net-worth value placed at its real moment on a time axis. */
 export interface CurvePoint extends MonthPoint {
   /** The point's date as a UTC timestamp (ms). */
   at: number;
+  /** The value on the solid line: recorded by the app. Null elsewhere. */
+  recorded: number | null;
+  /** The value on the dashed line: partly rebuilt from past activity, plus the recorded points it joins. */
+  rebuilt: number | null;
 }
 
 const MAX_TICKS = 6;
@@ -14,9 +18,25 @@ function utcDay(isoDate: string): number {
   return Date.UTC(year, mon - 1, day);
 }
 
-/** Puts each month's value at its date, so gaps between recorded months stay visible. */
+/**
+ * Puts each month's value at its date, so gaps between recorded months stay visible, and splits it
+ * into a solid recorded line and a dashed rebuilt one that meet where one hands over to the other.
+ * A month with no value is null on both, so the curve breaks there.
+ */
 export function toCurvePoints(history: MonthPoint[]): CurvePoint[] {
-  return history.map((point) => ({ ...point, at: utcDay(point.date) }));
+  const rebuilt = (i: number) => history[i]?.reconstructed === true && history[i].total_chf !== null;
+  return history.map((point, i) => ({
+    ...point,
+    at: utcDay(point.date),
+    recorded: point.reconstructed ? null : point.total_chf,
+    rebuilt: rebuilt(i) || rebuilt(i - 1) || rebuilt(i + 1) ? point.total_chf : null,
+  }));
+}
+
+/** The labels of the sources a point leaves out, in the order the gaps list them. */
+export function missingLabels(point: MonthPoint, gaps: HistoryGap[]): string[] {
+  const labels = new Map(gaps.map((gap) => [gap.source, gap.label]));
+  return point.missing.map((source) => labels.get(source) ?? source);
 }
 
 /** The first day of every `stepMonths`-month period after `from`, up to `end`, aligned to month or year starts. */

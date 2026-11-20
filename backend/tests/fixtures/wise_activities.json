@@ -1,0 +1,13 @@
+[
+  {"occurred_at": "2024-06-26T07:09:54+00:00", "payload": {"id": "a1", "type": "CARD_ORDER", "status": "COMPLETED", "primaryAmount": "10 CHF", "secondaryAmount": "", "description": ""}},
+  {"occurred_at": "2024-06-26T07:10:14+00:00", "payload": {"id": "a2", "type": "BALANCE_DEPOSIT", "status": "COMPLETED", "primaryAmount": "<positive>+ 10 CHF</positive>", "secondaryAmount": "", "description": "Added"}},
+  {"occurred_at": "2024-07-02T10:00:00+00:00", "payload": {"id": "a3", "type": "BALANCE_DEPOSIT", "status": "COMPLETED", "primaryAmount": "<positive>+ 1,000 CHF</positive>", "secondaryAmount": "", "description": "Added"}},
+  {"occurred_at": "2024-07-03T10:00:00+00:00", "payload": {"id": "a4", "type": "CARD_PAYMENT", "status": "COMPLETED", "primaryAmount": "124.50 MXN", "secondaryAmount": "5.50 CHF", "description": ""}},
+  {"occurred_at": "2024-07-04T10:00:00+00:00", "payload": {"id": "a5", "type": "CARD_CHECK", "status": "CANCELLED", "primaryAmount": "0 EUR", "secondaryAmount": "", "description": "Card checked"}},
+  {"occurred_at": "2024-07-05T10:00:00+00:00", "payload": {"id": "a6", "type": "TRANSFER", "status": "COMPLETED", "primaryAmount": "<positive>+ 200 EUR</positive>", "secondaryAmount": "", "description": ""}},
+  {"occurred_at": "2024-07-06T10:00:00+00:00", "payload": {"id": "a7", "type": "CARD_PAYMENT", "status": "COMPLETED", "primaryAmount": "50 EUR", "secondaryAmount": "", "description": ""}},
+  {"occurred_at": "2024-07-07T10:00:00+00:00", "payload": {"id": "a8", "type": "CARD_PAYMENT", "status": "PENDING", "primaryAmount": "900 EUR", "secondaryAmount": "", "description": ""}},
+  {"occurred_at": "2024-08-01T10:00:00+00:00", "payload": {"id": "a9", "type": "CARD_PAYMENT", "status": "COMPLETED", "primaryAmount": "<positive>+ 20 EUR</positive>", "secondaryAmount": "", "description": "Refunded"}},
+  {"occurred_at": "2024-09-10T10:00:00+00:00", "payload": {"id": "a10", "type": "TRANSFER", "status": "COMPLETED", "primaryAmount": "45,000 MXN", "secondaryAmount": "2,000 CHF", "description": "Sent"}},
+  {"occurred_at": "2024-10-01T10:00:00+00:00", "payload": {"id": "a11", "type": "BALANCE_DEPOSIT", "status": "COMPLETED", "primaryAmount": "<positive>+ 3,000 CHF</positive>", "secondaryAmount": "", "description": "Added"}}
+]

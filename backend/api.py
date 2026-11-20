@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from .config import load_config
 from .csv_source.neon import archive_csv, parse_neon_csv
 from .database import LIQUIDITY_BUCKET, SQLiteRepository
-from .freshness import NOTES, STALE_AFTER_DAYS, source_freshness
+from .freshness import LABELS, NOTES, STALE_AFTER_DAYS, source_freshness
 from .fx import convert as fx_convert
 from .fx import convert_to_chf
 from .snapshots import monthly_history, record_snapshot
@@ -116,6 +116,7 @@ def dashboard(repo: Annotated[SQLiteRepository, Depends(get_repository)], curren
         "buckets": agg["buckets"],
         "change_since_last_month": history["change_since_last_month"],
         "history": history["months"],
+        "history_gaps": [{**g, "label": LABELS.get(g["source"], g["source"])} for g in history["gaps"]],
         "spending": recent_spending(repo, today),
         "sources": sources,
         "stale_after_days": STALE_AFTER_DAYS,
@@ -225,7 +226,7 @@ async def upload_neon_csv(
 
     imported = repo.import_neon_transactions(content, file.filename, rows)
 
-    balance = repo.recompute_neon_balance(*_load_neon_anchor(repo))
+    balance = repo.recompute_neon_balance(*repo.get_neon_anchor())
 
     holding = repo.upsert_holding(
         source="neon",
@@ -244,16 +245,9 @@ async def upload_neon_csv(
     }
 
 
-def _load_neon_anchor(repo: SQLiteRepository) -> tuple[str | None, float | None]:
-    anchor_date = repo.get_setting("neon_anchor_date")
-    anchor_amount_str = repo.get_setting("neon_anchor_amount")
-    anchor_amount = float(anchor_amount_str) if anchor_amount_str is not None else None
-    return anchor_date, anchor_amount
-
-
 @app.post("/holdings/neon/recompute")
 def recompute_neon_holding(repo: Annotated[SQLiteRepository, Depends(get_repository)]) -> dict:
-    balance = repo.recompute_neon_balance(*_load_neon_anchor(repo))
+    balance = repo.recompute_neon_balance(*repo.get_neon_anchor())
 
     holding = repo.upsert_holding(
         source="neon",
@@ -282,7 +276,7 @@ def put_setting(key: str, body: SettingInput, repo: Annotated[SQLiteRepository, 
     repo.set_setting(key, body.value)
 
     if key in ("neon_anchor_date", "neon_anchor_amount"):
-        balance = repo.recompute_neon_balance(*_load_neon_anchor(repo))
+        balance = repo.recompute_neon_balance(*repo.get_neon_anchor())
         repo.upsert_holding(
             source="neon",
             source_type="csv",

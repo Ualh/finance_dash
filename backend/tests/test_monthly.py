@@ -213,8 +213,8 @@ class TestCurveFollowsEveryChange:
             client.post("/holdings/finpension", json={"value_chf": 41_500})
             d = client.get("/dashboard").json()
         assert d["history"] == [
-            {"month": "2026-10", "date": "2026-10-31", "total_chf": 40_000.0},
-            {"month": "2026-11", "date": "2026-11-01", "total_chf": 41_500.0},
+            {"month": "2026-10", "date": "2026-10-31", "total_chf": 40_000.0, "reconstructed": False, "missing": []},
+            {"month": "2026-11", "date": "2026-11-01", "total_chf": 41_500.0, "reconstructed": False, "missing": []},
         ]
         assert d["change_since_last_month"]["amount_chf"] == 1_500.0
 
@@ -224,7 +224,7 @@ class TestCurveFollowsEveryChange:
         with freeze_time("2026-11-20 08:00:00"):
             d = client.get("/dashboard").json()
         assert [p["month"] for p in d["history"]] == ["2022-01", "2024-06", "2026-10", "2026-11"]
-        assert d["history"][0] == {"month": "2022-01", "date": "2022-01-28", "total_chf": 100.0}
+        assert d["history"][0] == {"month": "2022-01", "date": "2022-01-28", "total_chf": 100.0, "reconstructed": False, "missing": []}
 
     def test_neon_upload_writes_todays_snapshot(self, client):
         with freeze_time("2026-06-26 09:00:00"):

@@ -132,6 +132,14 @@ class SQLiteRepository:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS history_gaps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                start_date TEXT,
+                end_date TEXT,
+                reason TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS cash_withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -142,6 +150,7 @@ class SQLiteRepository:
         """)
         self._migrate_holdings_native_columns(cursor)
         self._migrate_neon_transaction_columns(cursor)
+        self._migrate_snapshot_columns(cursor)
         self._connection.commit()
 
     def _migrate_holdings_native_columns(self, cursor: sqlite3.Cursor) -> None:
@@ -157,6 +166,12 @@ class SQLiteRepository:
         existing = {row["name"] for row in cursor.execute("PRAGMA table_info(neon_transactions)").fetchall()}
         if "is_space" not in existing:
             cursor.execute("ALTER TABLE neon_transactions ADD COLUMN is_space INTEGER NOT NULL DEFAULT 0")
+
+    def _migrate_snapshot_columns(self, cursor: sqlite3.Cursor) -> None:
+        """Tell reconstructed points (rebuilt from past activity) from snapshots the app recorded."""
+        existing = {row["name"] for row in cursor.execute("PRAGMA table_info(nw_snapshots)").fetchall()}
+        if "reconstructed" not in existing:
+            cursor.execute("ALTER TABLE nw_snapshots ADD COLUMN reconstructed INTEGER NOT NULL DEFAULT 0")
 
     def upsert_holding(self, source: str, source_type: str, asset_class: str, value_chf: float,
                        label: Optional[str] = None, native_amount: Optional[float] = None,
@@ -265,7 +280,8 @@ class SQLiteRepository:
                 available_chf = excluded.available_chf,
                 invested_chf = excluded.invested_chf,
                 locked_chf = excluded.locked_chf,
-                created_at = excluded.created_at
+                created_at = excluded.created_at,
+                reconstructed = 0
         """, (snapshot_date, source, total_chf, available_chf, invested_chf, locked_chf, now))
         self._connection.commit()
         row = cursor.execute(
@@ -370,6 +386,11 @@ class SQLiteRepository:
         self._connection.commit()
         return len(rows)
 
+    def get_neon_anchor(self) -> tuple[Optional[str], Optional[float]]:
+        """The Neon anchor (date, amount) from Settings; either is None until it is set."""
+        amount = self.get_setting("neon_anchor_amount")
+        return self.get_setting("neon_anchor_date"), float(amount) if amount is not None else None
+
     def recompute_neon_balance(self, anchor_date: Optional[str], anchor_amount: Optional[float]) -> float:
         if anchor_date is None or anchor_amount is None:
             row = self._connection.execute(
@@ -395,7 +416,61 @@ class SQLiteRepository:
 
     def list_total_snapshots(self) -> list[dict]:
         rows = self._connection.execute(
-            "SELECT snapshot_date, total_chf FROM nw_snapshots WHERE source = 'total' ORDER BY snapshot_date"
+            "SELECT snapshot_date, total_chf FROM nw_snapshots WHERE source = 'total' AND reconstructed = 0 "
+            "ORDER BY snapshot_date"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def list_snapshots(self) -> list[dict]:
+        """Every snapshot row, recorded and reconstructed, per source and `total`, oldest first."""
+        rows = self._connection.execute(
+            "SELECT snapshot_date, source, total_chf, reconstructed FROM nw_snapshots ORDER BY snapshot_date, source"
+        ).fetchall()
+        return [{**dict(r), "reconstructed": bool(r["reconstructed"])} for r in rows]
+
+    def first_recorded_snapshot_dates(self) -> dict[str, str]:
+        """The day each source was first recorded by the app (not reconstructed)."""
+        rows = self._connection.execute(
+            "SELECT source, MIN(snapshot_date) AS first FROM nw_snapshots "
+            "WHERE reconstructed = 0 AND source != 'total' GROUP BY source"
+        ).fetchall()
+        return {r["source"]: r["first"] for r in rows}
+
+    def replace_reconstruction(self, points: list[dict], gaps: list[dict]) -> int:
+        """Swap the reconstructed past for a fresh one, in one transaction.
+
+        A recorded snapshot always wins: a point whose day and source already hold a recorded
+        row is dropped, never written over it. Returns how many points were stored.
+        """
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._connection:
+            self._connection.execute("DELETE FROM nw_snapshots WHERE reconstructed = 1")
+            cursor = self._connection.executemany(
+                """INSERT INTO nw_snapshots (snapshot_date, source, total_chf, available_chf, invested_chf,
+                                              locked_chf, created_at, reconstructed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                   ON CONFLICT(snapshot_date, source) DO NOTHING""",
+                [(p["date"], p["source"], p["total_chf"], p["available_chf"], p["invested_chf"], p["locked_chf"], now)
+                 for p in points],
+            )
+            stored = cursor.rowcount
+            self._connection.execute("DELETE FROM history_gaps")
+            self._connection.executemany(
+                "INSERT INTO history_gaps (source, start_date, end_date, reason) VALUES (?, ?, ?, ?)",
+                [(g["source"], g["start"], g["end"], g["reason"]) for g in gaps],
+            )
+        return stored
+
+    def list_history_gaps(self) -> list[dict]:
+        rows = self._connection.execute(
+            "SELECT source, start_date AS start, end_date AS end, reason FROM history_gaps "
+            "ORDER BY COALESCE(start_date, ''), source"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def list_neon_transactions(self) -> list[dict]:
+        rows = self._connection.execute(
+            "SELECT date, amount FROM neon_transactions ORDER BY date, id"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -486,11 +561,15 @@ class SQLiteRepository:
         return row["rate"] if row else None
 
     def put_fx_rate(self, base: str, quote: str, valuation_date: str, rate: float, source: str = "frankfurter") -> None:
-        self._connection.execute(
-            "INSERT OR REPLACE INTO fx_rates (base, quote, valuation_date, rate, source) VALUES (?, ?, ?, ?, ?)",
-            (base, quote, valuation_date, rate, source),
-        )
-        self._connection.commit()
+        self.put_fx_rates([(base, quote, valuation_date, rate, source)])
+
+    def put_fx_rates(self, rates: list[tuple[str, str, str, float, str]]) -> None:
+        """Store (base, quote, valuation_date, rate, source) rows in one transaction."""
+        with self._connection:
+            self._connection.executemany(
+                "INSERT OR REPLACE INTO fx_rates (base, quote, valuation_date, rate, source) VALUES (?, ?, ?, ?, ?)",
+                rates,
+            )
 
     def save_history_batch(self, source: str, dataset: str, records: list[dict],
                            cursor_key: Optional[str] = None, cursor_position: Optional[str] = None) -> int:

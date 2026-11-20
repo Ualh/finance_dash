@@ -1,3 +1,5 @@
+import type { HistoryGap } from "./types";
+
 const LOCALE = "de-CH";
 
 export function formatMoney(amount: number, currency = "CHF"): string {
@@ -24,6 +26,12 @@ export function formatMonthShort(at: number): string {
 /** A UTC timestamp → "2026". */
 export function formatYear(at: number): string {
   return String(new Date(at).getUTCFullYear());
+}
+
+/** "2026-11-04" or "2026-11" → "Nov 2026". */
+export function formatMonthYear(isoDate: string): string {
+  const [year, mon] = isoDate.split("-").map(Number);
+  return new Date(Date.UTC(year, mon - 1, 1)).toLocaleString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 /** "2026-11" → "November 2026". */
@@ -60,4 +68,15 @@ export function formatMoment(iso: string, now: Date): string {
   if (days === 1) return `yesterday ${time}`;
   const local = `${then.getFullYear()}-${String(then.getMonth() + 1).padStart(2, "0")}-${String(then.getDate()).padStart(2, "0")}`;
   return formatDay(local, now.getFullYear());
+}
+
+/** "Neon until Apr 2026", "Binance Jan 2023 – Mar 2024", "Wise from Dec 2025": the gaps that reach `since` or later. */
+export function formatGaps(gaps: HistoryGap[], since: string): string[] {
+  return gaps
+    .filter((gap) => gap.end === null || gap.end >= since)
+    .map((gap) => {
+      if (gap.start === null) return `${gap.label} until ${formatMonthYear(gap.end ?? since)}`;
+      if (gap.end === null) return `${gap.label} from ${formatMonthYear(gap.start)}`;
+      return `${gap.label} ${formatMonthYear(gap.start)} – ${formatMonthYear(gap.end)}`;
+    });
 }
