@@ -7,12 +7,12 @@ import { useApiClient } from "@/hooks/useApiClient";
 import { useDisplayCurrency } from "@/context/DisplayCurrencyContext";
 import { CurrencyToggle } from "@/components/CurrencyToggle";
 import { DataState } from "@/components/DataState";
-import { curveAxis, missingLabels, toCurvePoints, type CurvePoint } from "@/lib/curve";
+import { curveAxis, gapsSince, missingLabels, toCurvePoints, type CurvePoint } from "@/lib/curve";
 import {
   daysAgo,
   formatChange,
   formatDay,
-  formatGaps,
+  formatGap,
   formatMoment,
   formatMoney,
   formatMonthLong,
@@ -45,7 +45,7 @@ const Curve: React.FC<{ history: MonthPoint[]; gaps: HistoryGap[]; currency: str
   const points = toCurvePoints(history);
   const axis = curveAxis(points);
   const rebuilt = points.some((p) => p.reconstructed);
-  const notCounted = formatGaps(gaps, points[0].date);
+  const notCounted = gapsSince(gaps, points[0].date);
   return (
     <div>
       <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Since {formatMonthLong(points[0].month)}</p>
@@ -76,15 +76,22 @@ const Curve: React.FC<{ history: MonthPoint[]; gaps: HistoryGap[]; currency: str
                 <CurveTooltip point={payload?.[0]?.payload as CurvePoint | undefined} gaps={gaps} currency={currency} />
               )}
             />
-            <Area type="monotone" dataKey="rebuilt" stroke="#2563eb" strokeWidth={2} strokeDasharray="4 4" fill="url(#nw-fill)" />
-            <Area type="monotone" dataKey="recorded" stroke="#2563eb" strokeWidth={2} fill="url(#nw-fill)" />
+            <Area type="monotone" dataKey="dashed" stroke="#2563eb" strokeWidth={2} strokeDasharray="4 4" fill="url(#nw-fill)" />
+            <Area type="monotone" dataKey="solid" stroke="#2563eb" strokeWidth={2} fill="url(#nw-fill)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
       {(rebuilt || notCounted.length > 0) && (
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           {rebuilt && "Dashed: rebuilt from past activity. "}
-          {notCounted.length > 0 && `Not counted: ${notCounted.join(" · ")}.`}
+          {notCounted.length > 0 && "Not counted: "}
+          {notCounted.map((gap, i) => (
+            <span key={`${gap.source}-${gap.start}`} title={gap.reason}>
+              {i > 0 && " · "}
+              {formatGap(gap)}
+            </span>
+          ))}
+          {notCounted.length > 0 && "."}
         </p>
       )}
     </div>

@@ -70,13 +70,10 @@ export function formatMoment(iso: string, now: Date): string {
   return formatDay(local, now.getFullYear());
 }
 
-/** "Neon until Apr 2026", "Binance Jan 2023 – Mar 2024", "Wise from Dec 2025": the gaps that reach `since` or later. */
-export function formatGaps(gaps: HistoryGap[], since: string): string[] {
-  return gaps
-    .filter((gap) => gap.end === null || gap.end >= since)
-    .map((gap) => {
-      if (gap.start === null) return `${gap.label} until ${formatMonthYear(gap.end ?? since)}`;
-      if (gap.end === null) return `${gap.label} from ${formatMonthYear(gap.start)}`;
-      return `${gap.label} ${formatMonthYear(gap.start)} – ${formatMonthYear(gap.end)}`;
-    });
+/** "Neon until Apr 2026", "Binance Jan 2023 – Mar 2024", "Wise from Dec 2025", "IBKR": one gap as a month range. */
+export function formatGap(gap: HistoryGap): string {
+  if (gap.start !== null && gap.end !== null) return `${gap.label} ${formatMonthYear(gap.start)} – ${formatMonthYear(gap.end)}`;
+  if (gap.end !== null) return `${gap.label} until ${formatMonthYear(gap.end)}`;
+  if (gap.start !== null) return `${gap.label} from ${formatMonthYear(gap.start)}`;
+  return gap.label;
 }

@@ -124,13 +124,14 @@ draws rebuilt months dashed, and names in the tooltip the accounts a month leave
 
 | Account | How it is rebuilt | Where it cannot be |
 |---------|-------------------|--------------------|
-| Neon | Anchor + transactions up to each month-end, the live balance's rule | Before the anchor date |
-| Binance | Walked backward from the earliest stored daily balance snapshot, undoing every stored flow; before that, replayed forward from the empty account at its first activity. Valued at each asset's monthly close on Binance (USDT pair) and the ECB USD/CHF rate (Frankfurter), cached in `fx_rates` | Where neither walk holds up: an asset would be short by more than a dollar, so trades or transfers are missing (the API serves trades only for pairs still listed) |
-| Wise | Activity feed replayed forward from zero, per currency, a day at a time | From the first day a balance would go below zero, or a payment the feed does not split by balance, until the first sync: the feed does not say which transfers were paid from the balance |
+| Neon | Anchor + transactions up to each month-end, the live balance's rule; before the anchor, the anchor less the stored transactions in between | Before the first stored statement |
+| Binance | Walked backward from the earliest stored daily balance snapshot, undoing every stored flow; before that, replayed forward from the empty account at its first activity. Valued at each asset's monthly close on Binance (USDT pair), fiat at the ECB rate, and USD at the ECB USD/CHF rate (Frankfurter), cached in `fx_rates` | Where neither walk holds up: an asset would be short by more than a dollar, so trades or transfers are missing (the API serves trades only for pairs still listed) |
+| Wise | Activity feed replayed forward from zero, per currency, a day at a time, valued at the ECB rate | From the first day a balance would go below zero, or a payment the feed does not split by balance, until the first sync: the feed does not say which transfers were paid from the balance |
 
 A stretch that cannot be rebuilt is stored in `history_gaps`, listed under the curve
 ("Not counted: …") and left out of the months it covers; a month no account is known for is a
-hole in the curve. Coins Binance quotes no price for are left out and named in the output.
+hole in the curve; hovering a gap's name under the curve says why. Coins and currencies no
+market quotes are left out of the value and named in the output.
 Airdrops and Earn interest are not in the activity, so the backward walk counts them a little
 early.
 
@@ -143,8 +144,8 @@ Neon anchor, or deploying a change to it):
 ```
 
 It prints one line per account (months rebuilt, gaps, coins without a price) and replaces the
-previous reconstruction in one transaction; if a rate it needs cannot be fetched, it keeps the
-previous one and exits 1.
+previous reconstruction in one transaction; if it cannot fetch a price or the USD/CHF rate, it
+keeps the previous one and exits 1.
 
 ### Getting the keys
 

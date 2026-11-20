@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { curveAxis, missingLabels, toCurvePoints } from "./curve.ts";
+import { curveAxis, gapsSince, missingLabels, toCurvePoints } from "./curve.ts";
 
 const history = [
   { month: "2026-06", date: "2026-06-23", total_chf: 0, reconstructed: false, missing: [] },
@@ -69,14 +69,14 @@ test("rebuilt months draw a dashed line that reaches the first recorded month", 
     point("2026-10", 2000, false),
     point("2026-11", 2100, false),
   ]);
-  assert.deepEqual(points.map((p) => p.rebuilt), [400, 300, 2000, null]);
-  assert.deepEqual(points.map((p) => p.recorded), [null, null, 2000, 2100]);
+  assert.deepEqual(points.map((p) => p.dashed), [400, 300, 2000, null]);
+  assert.deepEqual(points.map((p) => p.solid), [null, null, 2000, 2100]);
 });
 
 test("a month nothing is known for breaks both lines", () => {
   const points = toCurvePoints([point("2022-12", 300, true), point("2023-01", null, false), point("2023-02", 250, true)]);
-  assert.deepEqual(points.map((p) => p.rebuilt), [300, null, 250]);
-  assert.deepEqual(points.map((p) => p.recorded), [null, null, null]);
+  assert.deepEqual(points.map((p) => p.dashed), [300, null, 250]);
+  assert.deepEqual(points.map((p) => p.solid), [null, null, null]);
 });
 
 const gaps = [
@@ -85,6 +85,10 @@ const gaps = [
   { source: "wise", label: "Wise", start: "2025-12-04", end: null, reason: "" },
   { source: "ibkr", label: "IBKR", start: "2019-01-01", end: "2019-06-30", reason: "" },
 ];
+
+test("only the gaps that reach the curve's first day are named under it", () => {
+  assert.deepEqual(gapsSince(gaps, "2022-01-31").map((g) => g.source), ["neon", "binance", "wise"]);
+});
 
 test("a point names the sources it leaves out by their labels", () => {
   assert.deepEqual(missingLabels(point("2023-02", null, false, ["binance", "neon", "other"]), gaps), ["Binance", "Neon", "other"]);

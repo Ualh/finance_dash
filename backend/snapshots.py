@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from backend.database import SQLiteRepository
-from backend.history.reconstruct import last_day_of_month
+from backend.months import month_end, next_month
 
 
 def record_snapshot(repo: SQLiteRepository, day: Optional[str] = None) -> None:
@@ -19,14 +19,6 @@ def record_snapshot(repo: SQLiteRepository, day: Optional[str] = None) -> None:
     total = repo.get_aggregate_holdings()
     repo.upsert_snapshot(day, "total", total["total_chf"], total["buckets"]["available"],
                          total["buckets"]["invested"], total["buckets"]["locked"])
-
-
-def _month_end(month: str) -> str:
-    return last_day_of_month(date.fromisoformat(f"{month}-01")).isoformat()
-
-
-def _next_month(month: str) -> str:
-    return (last_day_of_month(date.fromisoformat(f"{month}-01")) + timedelta(days=1)).strftime("%Y-%m")
 
 
 def _unknown_on(day: str, gaps: list[dict]) -> list[str]:
@@ -70,11 +62,11 @@ def monthly_history(repo: SQLiteRepository, current_total: float, today: Optiona
             total = round((snap["total_chf"] if snap else 0.0) + sum(s["total_chf"] for s in filled), 2)
             months.append({"month": month, "date": day, "total_chf": total, "reconstructed": bool(filled),
                            "missing": _unknown_on(day, gaps)})
-        elif _unknown_on(_month_end(month), gaps):
-            day = _month_end(month)
+        elif _unknown_on(month_end(month).isoformat(), gaps):
+            day = month_end(month).isoformat()
             months.append({"month": month, "date": day, "total_chf": None, "reconstructed": False,
                            "missing": _unknown_on(day, gaps)})
-        month = _next_month(month)
+        month = next_month(month)
 
     previous = next((m for m in reversed(months) if m["total_chf"] is not None), None)
     months.append({"month": current_month, "date": today.isoformat(), "total_chf": current_total,

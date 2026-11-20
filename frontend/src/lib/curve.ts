@@ -5,9 +5,9 @@ export interface CurvePoint extends MonthPoint {
   /** The point's date as a UTC timestamp (ms). */
   at: number;
   /** The value on the solid line: recorded by the app. Null elsewhere. */
-  recorded: number | null;
+  solid: number | null;
   /** The value on the dashed line: partly rebuilt from past activity, plus the recorded points it joins. */
-  rebuilt: number | null;
+  dashed: number | null;
 }
 
 const MAX_TICKS = 6;
@@ -28,9 +28,14 @@ export function toCurvePoints(history: MonthPoint[]): CurvePoint[] {
   return history.map((point, i) => ({
     ...point,
     at: utcDay(point.date),
-    recorded: point.reconstructed ? null : point.total_chf,
-    rebuilt: rebuilt(i) || rebuilt(i - 1) || rebuilt(i + 1) ? point.total_chf : null,
+    solid: point.reconstructed ? null : point.total_chf,
+    dashed: rebuilt(i) || rebuilt(i - 1) || rebuilt(i + 1) ? point.total_chf : null,
   }));
+}
+
+/** The gaps that reach the curve's first day or later: the ones worth naming under it. */
+export function gapsSince(gaps: HistoryGap[], since: string): HistoryGap[] {
+  return gaps.filter((gap) => gap.end === null || gap.end >= since);
 }
 
 /** The labels of the sources a point leaves out, in the order the gaps list them. */

@@ -17,16 +17,17 @@ from backend.database import SQLiteRepository
 from backend.fx.service import FrankfurterClient
 from backend.history import reconstruct
 from backend.history.reconstruct import (
+    Horizon,
     MarketPrices,
     PriceUnavailable,
     binance_reconstruction,
-    month_ends,
     neon_reconstruction,
     rebuild,
     split_symbol,
     wise_amount,
     wise_reconstruction,
 )
+from backend.months import month_ends
 from backend.snapshots import monthly_history
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -101,33 +102,44 @@ class TestNeon:
     TX = [{"date": "2026-04-28", "amount": -50.0}, {"date": "2026-05-02", "amount": -100.0},
           {"date": "2026-05-31", "amount": 20.0}, {"date": "2026-06-03", "amount": -40.0}]
 
-    def test_anchor_plus_transactions_at_each_month_end(self):
-        r = neon_reconstruction(self.TX, "2026-05-01", 1_000.0, None, date(2026, 8, 10))
-        # The April line predates the anchor, so it is not in the balance, like the live figure.
-        assert r.values == {"2026-05-31": 920.0, "2026-06-30": 880.0, "2026-07-31": 880.0}
+    def test_anchor_plus_transactions_at_each_month_end_and_back_through_earlier_statements(self):
+        r = neon_reconstruction(self.TX, "2026-05-01", 1_000.0, Horizon(None, date(2026, 8, 10)))
+        # From the anchor on, the April line is not in the balance, like the live figure; before
+        # the anchor, the balance is the anchor less what happened in between (nothing after 28 April).
+        assert r.values == {"2026-04-30": 1_000.0, "2026-05-31": 920.0, "2026-06-30": 880.0, "2026-07-31": 880.0}
 
-    def test_before_the_anchor_is_a_gap(self):
-        r = neon_reconstruction(self.TX, "2026-05-01", 1_000.0, None, date(2026, 8, 10))
-        assert [(g.start, g.end) for g in r.gaps] == [(None, "2026-04-30")]
+    def test_before_the_first_statement_is_a_gap(self):
+        r = neon_reconstruction(self.TX, "2026-05-01", 1_000.0, Horizon(None, date(2026, 8, 10)))
+        assert [(g.start, g.end) for g in r.gaps] == [(None, "2026-04-27")]
+
+    def test_a_month_before_the_anchor_undoes_the_lines_after_it(self):
+        tx = [{"date": "2026-03-10", "amount": 30.0}, {"date": "2026-04-05", "amount": -200.0}]
+        r = neon_reconstruction(tx, "2026-05-01", 1_000.0, Horizon(None, date(2026, 5, 10)))
+        assert r.values == {"2026-03-31": 1_200.0, "2026-04-30": 1_000.0}
+
+    def test_the_gap_never_runs_past_the_first_recorded_snapshot(self):
+        r = neon_reconstruction([], "2026-09-01", 1_000.0, Horizon("2026-07-15", date(2026, 11, 20)))
+        assert [(g.start, g.end) for g in r.gaps] == [(None, "2026-07-14")]
+        assert r.values == {}
 
     def test_stops_where_the_app_started_recording(self):
-        r = neon_reconstruction(self.TX, "2026-05-01", 1_000.0, "2026-07-15", date(2026, 11, 20))
-        assert list(r.values) == ["2026-05-31", "2026-06-30"]
+        r = neon_reconstruction(self.TX, "2026-05-01", 1_000.0, Horizon("2026-07-15", date(2026, 11, 20)))
+        assert list(r.values) == ["2026-04-30", "2026-05-31", "2026-06-30"]
 
     def test_without_anchor_the_balance_starts_at_zero(self):
-        r = neon_reconstruction(self.TX, None, None, None, date(2026, 7, 1))
+        r = neon_reconstruction(self.TX, None, None, Horizon(None, date(2026, 7, 1)))
         assert r.values == {"2026-04-30": -50.0, "2026-05-31": -130.0, "2026-06-30": -170.0}
         assert r.gaps == []
 
     def test_nothing_stored_means_nothing_rebuilt(self):
-        r = neon_reconstruction([], None, None, None, date(2026, 7, 1))
+        r = neon_reconstruction([], None, None, Horizon(None, date(2026, 7, 1)))
         assert (r.values, r.gaps) == ({}, [])
 
 
 class TestBinance:
 
     def test_forward_from_empty_then_back_from_the_snapshot_with_a_gap_between(self, repo):
-        r = binance_reconstruction(binance_records(repo), BINANCE_PRICES, None, date(2022, 8, 20))
+        r = binance_reconstruction(binance_records(repo), BINANCE_PRICES, Horizon(None, date(2022, 8, 20)))
         assert r.values == {
             # Forward from the empty account: USD 500 in, 400 spent as BUSD on 0.01 BTC.
             "2022-01-31": 400.0,
@@ -144,34 +156,34 @@ class TestBinance:
         assert [(g.start, g.end) for g in r.gaps] == [("2022-03-01", "2022-03-31")]
 
     def test_an_asset_without_a_market_is_left_out_and_named(self, repo):
-        r = binance_reconstruction(binance_records(repo), BINANCE_PRICES, None, date(2022, 8, 20))
-        assert r.notes == ["no market price, left out: XYZ (4 months)"]
+        r = binance_reconstruction(binance_records(repo), BINANCE_PRICES, Horizon(None, date(2022, 8, 20)))
+        assert r.unpriced == {"XYZ": 4}
+        assert r.line().endswith("; no market price, left out: XYZ (4 months)")
 
     def test_stops_where_the_app_started_recording(self, repo):
-        r = binance_reconstruction(binance_records(repo), BINANCE_PRICES, "2022-06-10", date(2022, 11, 1))
+        r = binance_reconstruction(binance_records(repo), BINANCE_PRICES, Horizon("2022-06-10", date(2022, 11, 1)))
         assert list(r.values)[-1] == "2022-05-31"
 
     def test_without_a_snapshot_the_forward_walk_ends_in_a_gap_to_the_first_sync(self, repo):
         records = binance_records(repo)
         records["spot_snapshots"] = []
-        r = binance_reconstruction(records, BINANCE_PRICES, "2022-07-20", date(2022, 11, 1))
+        r = binance_reconstruction(records, BINANCE_PRICES, Horizon("2022-07-20", date(2022, 11, 1)))
         assert list(r.values) == ["2022-01-31", "2022-02-28"]
         assert [(g.start, g.end) for g in r.gaps] == [("2022-03-01", "2022-07-19")]
 
     def test_complete_activity_has_no_gap(self, repo):
         records = binance_records(repo)
-        r = binance_reconstruction({"fiat_deposits": records["fiat_deposits"]}, BINANCE_PRICES, None,
-                                   date(2022, 3, 5))
+        r = binance_reconstruction({"fiat_deposits": records["fiat_deposits"]}, BINANCE_PRICES, Horizon(None, date(2022, 3, 5)))
         assert r.values == {"2022-01-31": 400.0, "2022-02-28": 400.0}
         assert r.gaps == []
 
     def test_a_missing_usd_rate_stops_the_rebuild(self, repo):
         prices = FakePrices(usd=BINANCE_PRICES.usd, chf={})
         with pytest.raises(PriceUnavailable):
-            binance_reconstruction(binance_records(repo), prices, None, date(2022, 8, 20))
+            binance_reconstruction(binance_records(repo), prices, Horizon(None, date(2022, 8, 20)))
 
     def test_nothing_stored_means_nothing_rebuilt(self):
-        r = binance_reconstruction({}, BINANCE_PRICES, None, date(2022, 8, 20))
+        r = binance_reconstruction({}, BINANCE_PRICES, Horizon(None, date(2022, 8, 20)))
         assert (r.values, r.gaps) == ({}, [])
 
     @pytest.mark.parametrize("symbol, pair", [
@@ -181,18 +193,26 @@ class TestBinance:
         assert split_symbol(symbol) == pair
 
     def test_buying_moves_quote_into_base_minus_the_fee(self):
-        deltas = reconstruct._binance_deltas("trades", {
+        deltas = reconstruct._trade({
             "symbol": "ETHBTC", "qty": "2", "quoteQty": "0.1", "commission": "0.002", "commissionAsset": "ETH",
             "isBuyer": True})
         assert deltas == {"ETH": 1.998, "BTC": -0.1}
 
     def test_card_sells_and_fiat_withdrawals_leave_the_account(self):
-        assert reconstruct._binance_deltas("fiat_sells", {
+        assert reconstruct._card_sell({
             "cryptoCurrency": "BTC", "sourceAmount": "0.1", "status": "Completed"}) == {"BTC": -0.1}
-        assert reconstruct._binance_deltas("fiat_withdrawals", {
+        assert reconstruct._fiat_withdrawal({
             "fiatCurrency": "EUR", "amount": "100", "status": "Successful"}) == {"EUR": -100.0}
-        assert reconstruct._binance_deltas("fiat_withdrawals", {
+        assert reconstruct._fiat_withdrawal({
             "fiatCurrency": "EUR", "amount": "100", "status": "Failed"}) is None
+
+    def test_a_buy_paid_from_the_cash_balance_takes_the_fiat_out(self):
+        row = {"cryptoCurrency": "BTC", "fiatCurrency": "EUR", "obtainAmount": "0.01", "sourceAmount": "300",
+               "status": "Completed"}
+        assert reconstruct._card_buy({**row, "paymentMethod": "Credit Card"}) == {"BTC": 0.01}
+        assert reconstruct._card_buy({**row, "paymentMethod": "Cash Balance"}) == {"BTC": 0.01, "EUR": -300.0}
+        sell = {**row, "sourceAmount": "0.01", "obtainAmount": "290", "paymentMethod": "Cash Balance"}
+        assert reconstruct._card_sell(sell) == {"BTC": -0.01, "EUR": 290.0}
 
     def test_earn_positions_count_as_their_coin_but_lido_stays_lido(self):
         assert reconstruct.binance_asset("LDSOL") == "SOL"
@@ -203,7 +223,7 @@ class TestBinance:
 class TestWise:
 
     def test_replayed_per_currency_until_a_payment_the_balance_could_not_cover(self, repo):
-        r = wise_reconstruction(wise_records(repo), WISE_PRICES, "2024-11-15", date(2024, 12, 1))
+        r = wise_reconstruction(wise_records(repo), WISE_PRICES, Horizon("2024-11-15", date(2024, 12, 1)))
         # June nets out (the card order and the top-up that paid it share a day); EUR at each month's rate.
         assert r.values == {"2024-06-30": 0.0, "2024-07-31": 1_137.0, "2024-08-31": 1_147.5}
         assert [(g.start, g.end) for g in r.gaps] == [("2024-09-10", "2024-11-14")]
@@ -213,21 +233,26 @@ class TestWise:
         split = {"id": "x", "type": "CARD_PAYMENT", "status": "COMPLETED", "primaryAmount": "175.50 EUR",
                  "secondaryAmount": "MXN, EUR, CHF"}
         records.append({"occurred_at": "2024-07-20T10:00:00+00:00", "payload": json.dumps(split)})
-        r = wise_reconstruction(records, WISE_PRICES, None, date(2024, 10, 1))
+        r = wise_reconstruction(records, WISE_PRICES, Horizon(None, date(2024, 10, 1)))
         assert r.values == {"2024-06-30": 0.0}
         assert [(g.start, g.end) for g in r.gaps] == [("2024-07-20", None)]
 
     def test_an_activity_type_the_feed_does_not_explain_ends_what_is_known(self, repo):
         odd = {"id": "x", "type": "INTEREST", "status": "COMPLETED", "primaryAmount": "<positive>+ 1 CHF</positive>"}
         records = [{"occurred_at": "2024-07-20T10:00:00+00:00", "payload": json.dumps(odd)}]
-        r = wise_reconstruction(records, WISE_PRICES, None, date(2024, 10, 1))
+        r = wise_reconstruction(records, WISE_PRICES, Horizon(None, date(2024, 10, 1)))
         assert r.values == {}
         assert [(g.start, g.end) for g in r.gaps] == [("2024-07-20", None)]
 
-    def test_a_currency_without_a_rate_stops_the_rebuild(self, repo):
-        records = wise_records(repo)
-        with pytest.raises(PriceUnavailable):
-            wise_reconstruction(records, FakePrices(usd={}, chf={}), None, date(2024, 9, 1))
+    def test_a_currency_without_a_rate_is_left_out_and_named(self, repo):
+        r = wise_reconstruction(wise_records(repo), FakePrices(usd={}, chf={}), Horizon(None, date(2024, 9, 1)))
+        assert r.values == {"2024-06-30": 0.0, "2024-07-31": 994.5, "2024-08-31": 994.5}
+        assert r.unpriced == {"EUR": 2}
+
+    def test_a_gap_that_starts_after_the_first_sync_is_dropped(self, repo):
+        r = wise_reconstruction(wise_records(repo), WISE_PRICES, Horizon("2024-08-15", date(2024, 12, 1)))
+        assert list(r.values) == ["2024-06-30", "2024-07-31"]
+        assert r.gaps == []
 
     @pytest.mark.parametrize("text, amount", [
         ("<positive>+ 1,000 CHF</positive>", (1_000.0, "CHF")),
@@ -240,7 +265,7 @@ class TestWise:
         assert wise_amount(text) == amount
 
     def test_nothing_stored_means_nothing_rebuilt(self):
-        r = wise_reconstruction([], WISE_PRICES, None, date(2024, 9, 1))
+        r = wise_reconstruction([], WISE_PRICES, Horizon(None, date(2024, 9, 1)))
         assert (r.values, r.gaps) == ({}, [])
 
 
@@ -421,6 +446,14 @@ class TestMarketPrices:
         assert prices.chf_rate("CHF", date(2024, 2, 29)) == 1.0
         assert series.call_count == 1
         assert repo.get_cached_fx_rate("USD", "CHF", "2024-03-31") == 0.9
+
+    def test_fiat_no_usdt_pair_quotes_is_priced_at_the_ecb_rate(self, repo):
+        series = {"CHF": {}, "USD": {"2024-03-28": 0.9}, "MXN": {"2024-03-28": 0.054}}
+        prices = MarketPrices(repo, klines=lambda s: [], fx_series=lambda base, *_: series.get(base, {}),
+                              now=datetime(2024, 5, 1, tzinfo=timezone.utc))
+        assert prices.usd_price("MXN", date(2024, 3, 31)) == pytest.approx(0.06)
+        assert prices.usd_price("XYZW", date(2024, 3, 31)) is None
+        assert prices.usd_price("ABC", date(2024, 3, 31)) is None
 
     def test_a_coin_binance_does_not_list_has_no_price(self, repo):
         response = requests.Response()
