@@ -414,13 +414,6 @@ class SQLiteRepository:
         row = self._connection.execute("SELECT MAX(date) AS latest FROM neon_transactions").fetchone()
         return row["latest"]
 
-    def list_total_snapshots(self) -> list[dict]:
-        rows = self._connection.execute(
-            "SELECT snapshot_date, total_chf FROM nw_snapshots WHERE source = 'total' AND reconstructed = 0 "
-            "ORDER BY snapshot_date"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
     def list_snapshots(self) -> list[dict]:
         """Every snapshot row, recorded and reconstructed, per source and `total`, oldest first."""
         rows = self._connection.execute(

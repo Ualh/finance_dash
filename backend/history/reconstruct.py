@@ -162,6 +162,10 @@ class Horizon:
         """Where a gap that runs on until the app recorded the source ends; None: it never did."""
         return (_day(self.first_recorded) - timedelta(days=1)).isoformat() if self.first_recorded else None
 
+    def clip(self, end: str) -> str:
+        """A gap's last day, kept before the first recorded snapshot: from there the source is known."""
+        return min(end, self.last_unknown_day) if self.last_unknown_day else end
+
 
 # --- Neon -----------------------------------------------------------------------------------
 
@@ -177,10 +181,7 @@ def neon_reconstruction(transactions: list[dict], anchor_date: Optional[str], an
             after_day = sum(t["amount"] for t in transactions if day < t["date"] < anchor_date)
             return anchor_amount + since_anchor - after_day
 
-        unknown_until = (_day(known_from) - timedelta(days=1)).isoformat()
-        if horizon.last_unknown_day is not None:
-            unknown_until = min(unknown_until, horizon.last_unknown_day)
-        result.add_gap(None, unknown_until, NEON_GAP)
+        result.add_gap(None, horizon.clip((_day(known_from) - timedelta(days=1)).isoformat()), NEON_GAP)
     elif transactions:
         known_from = transactions[0]["date"]
 
@@ -415,7 +416,8 @@ def binance_reconstruction(records: dict[str, list[dict]], prices: PriceBook, ho
         if not snapshots:
             result.add_gap(forward_until, horizon.last_unknown_day, BINANCE_GAP)
         elif backward_from is not None and forward_until < backward_from:
-            result.add_gap(forward_until, (_day(backward_from) - timedelta(days=1)).isoformat(), BINANCE_GAP)
+            gap_end = horizon.clip((_day(backward_from) - timedelta(days=1)).isoformat())
+            result.add_gap(forward_until, gap_end, BINANCE_GAP)
     return result
 
 

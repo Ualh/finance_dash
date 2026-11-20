@@ -171,6 +171,11 @@ class TestBinance:
         assert list(r.values) == ["2022-01-31", "2022-02-28"]
         assert [(g.start, g.end) for g in r.gaps] == [("2022-03-01", "2022-07-19")]
 
+    def test_the_gap_stops_where_the_app_started_recording_even_after_an_older_snapshot(self, repo):
+        r = binance_reconstruction(binance_records(repo), BINANCE_PRICES, Horizon("2022-03-20", date(2022, 11, 1)))
+        assert list(r.values) == ["2022-01-31", "2022-02-28"]
+        assert [(g.start, g.end) for g in r.gaps] == [("2022-03-01", "2022-03-19")]
+
     def test_complete_activity_has_no_gap(self, repo):
         records = binance_records(repo)
         r = binance_reconstruction({"fiat_deposits": records["fiat_deposits"]}, BINANCE_PRICES, Horizon(None, date(2022, 3, 5)))
@@ -311,10 +316,6 @@ class TestRebuild:
         row = next(s for s in repo.list_snapshots() if (s["snapshot_date"], s["source"]) == ("2022-05-31", "neon"))
         assert (row["total_chf"], row["reconstructed"]) == (510.0, False)
 
-    def test_reconstructed_points_never_count_as_recorded_totals(self, repo):
-        rebuild(repo, self.seed(repo), today=date(2022, 8, 20))
-        assert repo.list_total_snapshots() == []
-
     def test_reconstructed_points_fill_their_liquidity_bucket(self, repo):
         rebuild(repo, self.seed(repo), today=date(2022, 8, 20))
         row = repo._connection.execute(
@@ -364,6 +365,15 @@ class TestCurve:
             {"month": "2022-05", "date": "2022-05-20", "total_chf": 3_000.0, "reconstructed": False, "missing": []},
         ]
         assert history["change_since_last_month"]["since"] == "2022-04-30"
+
+    def test_a_gap_stops_where_its_source_was_first_recorded_after_the_rebuild(self, repo):
+        repo.replace_reconstruction([point("2026-09-30", "binance", 400.0)],
+                                    [gap("wise", "2026-09-01", None), gap("binance", "2026-11-10", None)])
+        repo.upsert_snapshot("2026-11-07", "wise", 600.0, 600.0, 0, 0)
+        repo.upsert_snapshot("2026-11-10", "binance", 450.0, 0, 450.0, 0)
+        history = monthly_history(repo, 1_050.0, date(2026, 11, 20))
+        assert [m["missing"] for m in history["months"]] == [["wise"], ["wise"], []]
+        assert history["gaps"] == [gap("wise", "2026-09-01", "2026-11-06")]
 
     def test_the_change_since_last_month_skips_a_hole(self, repo):
         repo.replace_reconstruction([point("2022-03-31", "binance", 300.0)], [gap("binance", "2022-04-01", None)])

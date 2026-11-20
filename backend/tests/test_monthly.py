@@ -229,8 +229,8 @@ class TestCurveFollowsEveryChange:
     def test_neon_upload_writes_todays_snapshot(self, client):
         with freeze_time("2026-06-26 09:00:00"):
             upload_neon(client)
-        snaps = repo().list_total_snapshots()
-        assert snaps == [{"snapshot_date": "2026-06-26", "total_chf": 615.0}]
+        snaps = [s for s in repo().list_snapshots() if s["source"] == "total"]
+        assert snaps == [{"snapshot_date": "2026-06-26", "source": "total", "total_chf": 615.0, "reconstructed": False}]
 
     def test_history_converts_to_display_currency(self, client):
         with freeze_time("2026-10-31 20:00:00"):

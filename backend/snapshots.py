@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from backend.database import SQLiteRepository
@@ -19,6 +19,18 @@ def record_snapshot(repo: SQLiteRepository, day: Optional[str] = None) -> None:
     total = repo.get_aggregate_holdings()
     repo.upsert_snapshot(day, "total", total["total_chf"], total["buckets"]["available"],
                          total["buckets"]["invested"], total["buckets"]["locked"])
+
+
+def _gaps_before_recording(gaps: list[dict], first_recorded: dict[str, str]) -> list[dict]:
+    """Gaps cut back to the day before their source was first recorded, in case it was recorded after the rebuild."""
+    clipped = []
+    for gap in gaps:
+        first = first_recorded.get(gap["source"])
+        if first is not None and (gap["end"] is None or gap["end"] >= first):
+            gap = {**gap, "end": (date.fromisoformat(first) - timedelta(days=1)).isoformat()}
+        if gap["start"] is None or gap["end"] is None or gap["start"] <= gap["end"]:
+            clipped.append(gap)
+    return clipped
 
 
 def _unknown_on(day: str, gaps: list[dict]) -> list[str]:
@@ -48,7 +60,7 @@ def monthly_history(repo: SQLiteRepository, current_total: float, today: Optiona
             recorded[month] = snap
         else:
             covered[snap["snapshot_date"]].add(snap["source"])
-    gaps = repo.list_history_gaps()
+    gaps = _gaps_before_recording(repo.list_history_gaps(), repo.first_recorded_snapshot_dates())
 
     months = []
     with_data = sorted(m for m in {*recorded, *rebuilt} if m < current_month)
