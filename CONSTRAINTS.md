@@ -55,14 +55,18 @@ from one test to another in the same file are not told apart from a rewrite.
 | Tests (backend) | every pytest test passes | `python -m pytest --cov` | task, CI | block |
 | Tests (frontend) | every node:test test passes | `node --test 'src/**/*.test.ts'` in `frontend/` | task, CI | block |
 | Secrets | no secret in the commits since the PR base | `gitleaks git --redact --log-opts=<merge-base>..HEAD` | CI, task when installed | block |
-| Coverage | changed lines ≥ 80% covered | `diff-cover <pytest lcov> <node lcov> --compare-branch=origin/main` | task, CI | warn |
+| Coverage | changed lines ≥ 80% covered | `diff-cover <pytest lcov> <node lcov> --compare-branch=origin/main` | task, CI | block |
 | Security: dependencies | no known vulnerability, any severity | `osv-scanner scan source -r .` | CI, task when installed | warn |
-| Security: code | no semgrep finding at high or above, including `ERROR` | `semgrep scan --config p/default --strict --json` + `node scripts/quality-gate.mjs semgrep` | CI, task when installed | warn |
+| Security: code | no semgrep finding at high or above, including `ERROR` | `semgrep scan --config p/default --strict --exclude=.claude --json` + `node scripts/quality-gate.mjs semgrep` | CI, task when installed | warn |
 
 Why these numbers and levels:
 
 - Block on the floor (which includes keeping existing tests, types, lint and secrets clean), warn on
   the rest: the skill's default, so new checks start as information before they gate anything.
+- Changed-line coverage blocks since 2026-11-27: the owner's review of 9–23 Nov found its warnings
+  real but never acted on. Semgrep and osv-scanner stay warnings.
+- Semgrep skips `.claude/` (agent skill scripts, not app code): one of them does not fully parse,
+  and `--strict` turned that into a failed scan on every run, hiding the real result.
 - 80% of changed lines: the skill's default. High enough to require a test, low enough to allow a
   config line. It counts backend Python and the frontend files the node tests load (`src/lib`).
   The React components have no test setup, so their lines are not counted.
