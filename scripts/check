@@ -87,8 +87,10 @@ secrets() {
   gitleaks git --redact --no-banner --log-opts="$mb..HEAD" .
 }
 
+# .claude/ holds agent skill scripts, not app code; semgrep cannot fully parse one of them, and
+# --strict then fails the whole scan before the gate reads any finding.
 semgrep_scan() {
-  semgrep scan --config p/default --metrics=off --strict --quiet --json --output "$tmp/semgrep.json" \
+  semgrep scan --config p/default --metrics=off --strict --quiet --exclude=.claude --json --output "$tmp/semgrep.json" \
     && node scripts/quality-gate.mjs semgrep "$tmp/semgrep.json"
 }
 
@@ -103,7 +105,7 @@ if [[ $mode == task ]]; then
     --cov --cov-report="lcov:$tmp/backend.lcov" --cov-report=
   run block "frontend tests: node --test" frontend_tests
   if [[ -f $tmp/backend.lcov && -f $tmp/frontend.lcov ]]; then
-    run warn "changed lines covered >= 80%: diff-cover" "$py" -m diff_cover.diff_cover_tool \
+    run block "changed lines covered >= 80%: diff-cover" "$py" -m diff_cover.diff_cover_tool \
       "$tmp/backend.lcov" "$tmp/frontend.lcov" --compare-branch="$base" --fail-under=80
     run warn "backend line coverage must not fall" ratchet backend \
       "$("$py" -m coverage report --format=total --precision=1)" "Backend line coverage"
